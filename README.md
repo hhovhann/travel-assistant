@@ -5,7 +5,7 @@ A multi-agent travel planning assistant built with **Spring AI**, the **Agent2Ag
 and a Hotel Agent, which query (mock) airline and hotel providers through MCP tools, and combines the results into an
 itinerary you can book from the chat.
 
-**Status: MVP (v0.1.0).** Works end to end with mock providers; see [Current limitations](#current-limitations).
+**Status: MVP (v0.2.0).** Works end to end with mock providers, with service auth and prompt-injection guardrails; see [Current limitations](#current-limitations).
 New here? [docs/ONBOARDING.md](docs/ONBOARDING.md) walks you through running and debugging it step by step.
 
 ## Architecture
@@ -143,7 +143,7 @@ Open <http://localhost:9000> for the chat UI, or run the end-to-end smoke test:
 ```
 
 To run a single service from the IDE or the command line, start the MCP servers first (the agents connect to them at
-startup): `java -jar mcp-flight-server/target/mcp-flight-server-0.1.0.jar`, and so on.
+startup): `java -jar mcp-flight-server/target/mcp-flight-server-0.2.0.jar`, and so on.
 
 ### Using a local model (no API key) or another provider
 

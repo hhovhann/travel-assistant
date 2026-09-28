@@ -62,9 +62,9 @@ For each configuration:
 Useful when you only want to debug one or two services. Run from the project root after `./mvnw package -DskipTests`:
 
 ```bash
-java -agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=*:5005 -jar mcp-flight-server/target/mcp-flight-server-0.1.0.jar
-java -agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=*:5006 -jar flight-agent/target/flight-agent-0.1.0.jar
-java -agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=*:5007 -jar travel-orchestrator/target/travel-orchestrator-0.1.0.jar
+java -agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=*:5005 -jar mcp-flight-server/target/mcp-flight-server-0.2.0.jar
+java -agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=*:5006 -jar flight-agent/target/flight-agent-0.2.0.jar
+java -agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=*:5007 -jar travel-orchestrator/target/travel-orchestrator-0.2.0.jar
 # ... and the hotel pair the same way (5008, 5009)
 ```
 

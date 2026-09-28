@@ -26,7 +26,7 @@ public class HotelAgentCardProducer {
                 .url(publicUrl)
                 .preferredTransport(TransportProtocol.JSONRPC.asString())
                 .protocolVersion("0.3.0")
-                .version("0.1.0")
+                .version("0.2.0")
                 .capabilities(new AgentCapabilities.Builder()
                         .streaming(false)
                         .pushNotifications(false)
