@@ -8,6 +8,17 @@ itinerary you can book from the chat.
 **Status: MVP (v0.2.0).** Works end to end with mock providers, with service auth and prompt-injection guardrails; see [Current limitations](#current-limitations).
 New here? [docs/ONBOARDING.md](docs/ONBOARDING.md) walks you through running and debugging it step by step.
 
+## Demo
+
+[![Travel Assistant demo video (3:25)](docs/travel-assistant-demo.png)](docs/travel-assistant-demo.mp4)
+
+**[▶ Watch the demo (3:25, MP4)](docs/travel-assistant-demo.mp4)** · captions:
+[SRT](docs/travel-assistant-demo.srt), [VTT](docs/travel-assistant-demo.vtt)
+
+A live recording of v0.2.0 with Qwen3 14B running locally in LM Studio (waiting time cut): planning a trip, the real
+tool calls behind the answer, a follow-up that keeps the context, booking with confirmation, and a prompt injection
+being blocked. The narration is a synthetic voice (Kokoro), generated locally.
+
 ## Architecture
 
 ```
@@ -239,7 +250,7 @@ hotel-agent/           A2A Hotel Agent (LLM + MCP client)
 mcp-flight-server/     MCP server with flight tools and mock providers
 mcp-hotel-server/      MCP server with hotel tools and mock providers
 travel-orchestrator/   REST API, chat UI (static/index.html) and the orchestrating LLM
-docs/                  ONBOARDING.md: run, debug and explore the application step by step
+docs/                  ONBOARDING.md (run, debug and explore step by step) and the demo video
 scripts/               start-dev.sh, stop-dev.sh, test-api.sh
 postman/               Postman environment for manual API testing
 Dockerfile             One multi-stage image for any module (--build-arg MODULE=<module>)
