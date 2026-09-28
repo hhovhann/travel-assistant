@@ -1,4 +1,4 @@
-# Travel AI Application Validation Checklist
+# Travel Assistant Validation Checklist
 
 ## Prerequisites
 - [ ] Java 27 installed (`java -version`), or Docker for the compose setup
@@ -9,7 +9,7 @@
 ```bash
 ./mvnw clean install
 ```
-- [ ] All modules compile and the A2A protocol tests pass
+- [ ] All modules compile and the 38 unit tests pass
 - [ ] Each service module has an executable jar in `target/`
 
 ## Startup
@@ -25,7 +25,7 @@
 ./scripts/test-api.sh
 ```
 - [ ] Both MCP servers answer the `initialize` handshake
-- [ ] MCP `tools/list` shows 5 flight tools and 6 hotel tools
+- [ ] MCP `tools/list` shows 6 flight tools and 7 hotel tools
 - [ ] Both agent cards are served at `/.well-known/agent-card.json` with the correct `url`
 - [ ] A direct A2A `message/send` to the Flight Agent ends in state `completed`
 - [ ] The orchestrator chat returns an itinerary with flight and hotel IDs taken from the agents

@@ -1,39 +1,38 @@
-# Travel AI Application
+# Travel Assistant
 
-A multi-agent travel planning assistant built with Spring AI, the Agent2Agent (A2A) protocol and the Model Context
-Protocol (MCP). You describe a trip in plain language; an orchestrator agent asks a Flight Agent and a Hotel Agent,
-which use MCP tools to query (mock) airline and hotel providers, and combines the results into an itinerary.
+A multi-agent travel planning assistant built with **Spring AI**, the **Agent2Agent (A2A)** protocol and the
+**Model Context Protocol (MCP)**. Describe a trip in plain language; an orchestrator agent delegates to a Flight Agent
+and a Hotel Agent, which query (mock) airline and hotel providers through MCP tools, and combines the results into an
+itinerary you can book from the chat.
 
 ## Architecture
 
 ```
-            Browser chat UI / REST
-                     │
-          ┌──────────▼──────────┐
-          │ Travel Orchestrator │  LLM with two tools: askFlightAgent, askHotelAgent
-          │      (:9000)        │
-          └──────┬───────┬──────┘
-          A2A    │       │    A2A (JSON-RPC, protocol 0.3.0)
-      ┌──────────▼──┐  ┌─▼───────────┐
-      │ Flight Agent│  │ Hotel Agent │  LLM + MCP client
-      │   (:8080)   │  │   (:8082)   │
-      └──────┬──────┘  └──────┬──────┘
-         MCP │ (Streamable HTTP)  │ MCP
-      ┌──────▼──────┐  ┌──────▼──────┐
-      │ Flight MCP  │  │  Hotel MCP  │  @McpTool methods
-      │   (:8081)   │  │   (:8083)   │
-      └──────┬──────┘  └──────┬──────┘
-   Joyair, AeroGo, DracAir    Marriott, Holiday Inn, Accor   (mock providers)
+                 Browser chat UI  /  REST API
+                              │
+                 ┌────────────▼────────────┐
+                 │   Travel Orchestrator   │  LLM with tools: askFlightAgent, askHotelAgent,
+                 │         :9000           │  proposeBooking, getBookings
+                 └──────┬───────────┬──────┘
+          A2A JSON-RPC  │           │  A2A JSON-RPC  (protocol 0.3.0)
+                ┌───────▼─────┐ ┌───▼─────────┐
+                │ Flight Agent│ │ Hotel Agent │  LLM + MCP client
+                │    :8080    │ │    :8082    │  (built on travel-core)
+                └───────┬─────┘ └───┬─────────┘
+     MCP Streamable HTTP│           │MCP Streamable HTTP
+                ┌───────▼─────┐ ┌───▼─────────┐
+                │ Flight MCP  │ │  Hotel MCP  │  @McpTool methods
+                │    :8081    │ │    :8083    │
+                └───────┬─────┘ └───┬─────────┘
+       Joyair, AeroGo, DracAir     Marriott, Holiday Inn, Accor      (mock providers)
 ```
 
-- **Orchestrator**: exposes the REST API and the chat UI. Its LLM decides which agent to call and what to ask; it
-  never routes by keywords. It can only *propose* a booking; the traveller confirms it in the UI. The conversation id is sent to the agents as the A2A `contextId`, so follow-ups
-  ("make the hotel cheaper") keep their context end to end.
-- **Agents**: standard A2A servers. The agent card is at `/.well-known/agent-card.json` and JSON-RPC is at `POST /`.
-  Text requests go to the agent's LLM, which extracts the search parameters and calls the MCP tools. Structured
-  requests (`DataPart`) run the allowed MCP tool directly; this is the only way to book.
-- **MCP servers**: standard MCP servers (Streamable HTTP at `/mcp`) that any MCP client can use, including Claude
-  Desktop or MCP Inspector. Each one aggregates several providers.
+| Service | Port | Role |
+|---|---|---|
+| `travel-orchestrator` | 9000 | REST API and chat UI. Its LLM decides which agent to ask and what to ask; it never routes by keywords. It can only *propose* a booking; the traveller confirms it. The conversation id is sent to the agents as the A2A `contextId`, so follow-ups ("make the hotel cheaper") keep their context end to end. |
+| `flight-agent` / `hotel-agent` | 8080 / 8082 | Standard A2A servers: agent card at `/.well-known/agent-card.json`, JSON-RPC at `POST /`. Text requests go to the agent's LLM, which calls the MCP tools. Structured requests (`DataPart`) run an allowed MCP tool directly; this is the only way to book. |
+| `mcp-flight-server` / `mcp-hotel-server` | 8081 / 8083 | Standard MCP servers (Streamable HTTP at `/mcp`) usable by any MCP client, including Claude Desktop or MCP Inspector. Each one aggregates several providers. |
+| `travel-core` | – | Shared library: A2A JSON-RPC endpoint, SDK wiring and the `ChatClient`-based `AgentExecutor` used by both agents. |
 
 ### MCP tools
 
@@ -73,22 +72,52 @@ LLMs search, compare and talk. Nothing that books is left to an LLM:
 | A2A Java SDK | 0.3.3.Final (latest stable; 1.0 is still Alpha) |
 | MCP Java SDK | 2.0.1 (via Spring AI) |
 
-## Quick start
+## Getting started
 
-Prerequisites: Java 27 and an OpenAI API key. Maven is not needed; the wrapper `./mvnw` is included.
+### Prerequisites
+
+- Java 27 (Maven is not needed, the wrapper `./mvnw` is included), **or** Docker
+- An OpenAI API key, or a local OpenAI-compatible model (see [Using a local model](#using-a-local-model-no-api-key-or-another-provider))
+- Free ports 8080, 8081, 8082, 8083 and 9000
+
+### 1. Clone and configure
 
 ```bash
-export OPENAI_API_KEY=sk-...        # or put OPENAI_API_KEY=sk-... in a .env file in the project root
-./scripts/start-dev.sh              # builds, then starts the 5 services in dependency order
-open http://localhost:9000          # chat UI
-./scripts/test-api.sh               # smoke test of every layer
-./scripts/stop-dev.sh
+git clone https://github.com/hhovhann/travel-assistant.git
+cd travel-assistant
+cp .env.example .env        # then set OPENAI_API_KEY (or pick a local model option)
 ```
 
-Or with Docker (no local Java needed):
+### 2. Build and test
 
 ```bash
-OPENAI_API_KEY=sk-... docker compose up --build
+./mvnw clean verify         # builds all modules and runs the unit tests (no API key needed)
+```
+
+### 3. Run
+
+```bash
+./scripts/start-dev.sh      # builds, then starts the 5 services in dependency order (logs in logs/)
+```
+
+Or with Docker, no local Java needed:
+
+```bash
+docker compose up --build
+```
+
+### 4. Use it
+
+Open <http://localhost:9000> for the chat UI, or run the end-to-end smoke test:
+
+```bash
+./scripts/test-api.sh       # needs jq; checks MCP, A2A cards, a direct agent call and an orchestrator chat
+```
+
+### 5. Stop
+
+```bash
+./scripts/stop-dev.sh       # or Ctrl+C / docker compose down
 ```
 
 To run a single service from the IDE or the command line, start the MCP servers first (the agents connect to them at
@@ -167,12 +196,16 @@ For local models use e.g. `OPENAI_TIMEOUT=10m` and `AGENT_TIMEOUT_SECONDS=900`.
 ## Project structure
 
 ```
-travel-core/        Shared A2A server support: JSON-RPC endpoint, SDK wiring, ChatClient-based AgentExecutor
+travel-core/           Shared A2A server support: JSON-RPC endpoint, SDK wiring, ChatClient-based AgentExecutor
 flight-agent/          A2A Flight Agent (LLM + MCP client)
 hotel-agent/           A2A Hotel Agent (LLM + MCP client)
 mcp-flight-server/     MCP server with flight tools and mock providers
 mcp-hotel-server/      MCP server with hotel tools and mock providers
 travel-orchestrator/   REST API, chat UI (static/index.html) and the orchestrating LLM
+scripts/               start-dev.sh, stop-dev.sh, test-api.sh
+postman/               Postman environment for manual API testing
+Dockerfile             One multi-stage image for any module (--build-arg MODULE=<module>)
+docker-compose.yml     All five services wired together
 ```
 
 ### Adding a provider

@@ -1,6 +1,6 @@
 {
-  "id": "travel-ai-environment",
-  "name": "Travel AI - Local Development",
+  "id": "travel-assistant-environment",
+  "name": "Travel Assistant - Local Development",
   "values": [
     {
       "key": "orchestrator_url",
