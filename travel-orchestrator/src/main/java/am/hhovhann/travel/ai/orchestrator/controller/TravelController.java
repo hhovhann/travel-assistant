@@ -1,5 +1,6 @@
 package am.hhovhann.travel.ai.orchestrator.controller;
 
+import am.hhovhann.travel.ai.core.guardrail.GuardrailViolationException;
 import am.hhovhann.travel.ai.orchestrator.booking.BookingConfirmation;
 import am.hhovhann.travel.ai.orchestrator.booking.BookingNotFoundException;
 import am.hhovhann.travel.ai.orchestrator.booking.BookingProposal;
@@ -102,6 +103,11 @@ public class TravelController {
     @ExceptionHandler(BookingNotFoundException.class)
     public ResponseEntity<Map<String, String>> bookingNotFound(BookingNotFoundException e) {
         return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("code", "BOOKING_NOT_FOUND", "error", e.getMessage()));
+    }
+
+    @ExceptionHandler(GuardrailViolationException.class)
+    public ResponseEntity<Map<String, String>> guardrailViolation(GuardrailViolationException e) {
+        return ResponseEntity.badRequest().body(Map.of("code", e.code(), "error", e.getMessage()));
     }
 
     @ExceptionHandler(IllegalArgumentException.class)

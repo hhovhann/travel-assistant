@@ -1,4 +1,6 @@
 server:
+  # Loopback only by default; docker compose sets SERVER_ADDRESS=0.0.0.0 on its private network
+  address: ${SERVER_ADDRESS:127.0.0.1}
   port: 8080
 
 spring:
@@ -35,3 +37,11 @@ a2a:
       # later is lost (the SDK closes the task's event queue), so keep it above the slowest expected run.
       timeout:
         seconds: ${AGENT_TIMEOUT_SECONDS:300}
+
+internal:
+  # Shared service token: the orchestrator must send it, and this agent sends it to its MCP server
+  api-token: ${INTERNAL_API_TOKEN:}
+
+guardrails:
+  # Longest request text accepted by the agent's LLM
+  max-input-chars: ${GUARDRAIL_MAX_INPUT_CHARS:4000}

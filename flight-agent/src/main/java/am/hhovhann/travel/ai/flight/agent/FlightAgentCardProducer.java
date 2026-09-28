@@ -1,5 +1,6 @@
 package am.hhovhann.travel.ai.flight.agent;
 
+import am.hhovhann.travel.ai.core.security.InternalAuth;
 import io.a2a.spec.AgentCapabilities;
 import io.a2a.spec.AgentCard;
 import io.a2a.spec.AgentSkill;
@@ -31,6 +32,9 @@ public class FlightAgentCardProducer {
                         .pushNotifications(false)
                         .stateTransitionHistory(false)
                         .build())
+                // Callers must send the internal bearer token (the card itself stays public)
+                .securitySchemes(InternalAuth.securitySchemes())
+                .security(InternalAuth.security())
                 .defaultInputModes(List.of("text/plain", "application/json"))
                 .defaultOutputModes(List.of("text/plain", "application/json"))
                 .skills(List.of(

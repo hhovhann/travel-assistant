@@ -7,8 +7,20 @@ if [ -z "$OPENAI_API_KEY" ] && ! grep -qs '^OPENAI_API_KEY=' .env; then
     exit 1
 fi
 
+# Shared service token: from the environment, else from .env, else generated for this run
+if [ -z "$INTERNAL_API_TOKEN" ]; then
+    INTERNAL_API_TOKEN=$(grep -s '^INTERNAL_API_TOKEN=' .env | cut -d= -f2-)
+fi
+if [ -z "$INTERNAL_API_TOKEN" ]; then
+    INTERNAL_API_TOKEN=$(openssl rand -hex 32)
+    echo "INTERNAL_API_TOKEN is not set; generated one for this run (add it to .env to keep it)."
+fi
+export INTERNAL_API_TOKEN
+
 ./mvnw -q -B clean package -DskipTests
 mkdir -p logs
+# For scripts/test-api.sh; readable only by you
+(umask 077 && printf '%s' "$INTERNAL_API_TOKEN" > logs/internal-token)
 : > logs/pids.txt
 
 start() {

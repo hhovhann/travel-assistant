@@ -1,5 +1,14 @@
-# Usage: create .env from .env.example, then: docker compose up --build   and open http://localhost:9000
+# Usage: create .env from .env.example (with OPENAI_API_KEY and INTERNAL_API_TOKEN), then:
+#   docker compose up --build   and open http://localhost:9000
+# Only the orchestrator is published, on the host's loopback. The agents and MCP servers are reachable only on the
+# compose network, and only with the internal token.
+x-internal-env: &internal-env
+  INTERNAL_API_TOKEN: ${INTERNAL_API_TOKEN:?set INTERNAL_API_TOKEN, e.g. INTERNAL_API_TOKEN=$(openssl rand -hex 32)}
+  # Listen on the container network (the services default to loopback)
+  SERVER_ADDRESS: 0.0.0.0
+
 x-agent-env: &llm-env
+  <<: *internal-env
   OPENAI_API_KEY: ${OPENAI_API_KEY:?set OPENAI_API_KEY}
   OPENAI_MODEL: ${OPENAI_MODEL:-gpt-5-mini}
   # For a local model use http://host.docker.internal:<port>/v1 (see .env.example)
@@ -11,15 +20,14 @@ services:
 
   mcp-flight-server:
     build: { context: ., args: { MODULE: mcp-flight-server } }
-    ports: ["8081:8081"]
+    environment: *internal-env
 
   mcp-hotel-server:
     build: { context: ., args: { MODULE: mcp-hotel-server } }
-    ports: ["8083:8083"]
+    environment: *internal-env
 
   flight-agent:
     build: { context: ., args: { MODULE: flight-agent } }
-    ports: ["8080:8080"]
     depends_on: [mcp-flight-server]
     # The MCP client connects at startup; retry until the MCP server is up
     restart: on-failure
@@ -31,7 +39,6 @@ services:
 
   hotel-agent:
     build: { context: ., args: { MODULE: hotel-agent } }
-    ports: ["8082:8082"]
     depends_on: [mcp-hotel-server]
     restart: on-failure
     environment:
@@ -41,7 +48,7 @@ services:
 
   travel-orchestrator:
     build: { context: ., args: { MODULE: travel-orchestrator } }
-    ports: ["9000:9000"]
+    ports: ["127.0.0.1:9000:9000"]
     depends_on: [flight-agent, hotel-agent]
     environment:
       <<: *llm-env

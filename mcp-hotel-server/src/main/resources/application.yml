@@ -1,4 +1,6 @@
 server:
+  # Loopback only by default; docker compose sets SERVER_ADDRESS=0.0.0.0 on its private network
+  address: ${SERVER_ADDRESS:127.0.0.1}
   port: 8083
 
 spring:
@@ -16,3 +18,7 @@ spring:
         protocol: STREAMABLE
         streamable-http:
           mcp-endpoint: /mcp
+
+internal:
+  # Shared service token; every MCP request must send it as a bearer token
+  api-token: ${INTERNAL_API_TOKEN:}

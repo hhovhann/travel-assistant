@@ -2,6 +2,9 @@ package am.hhovhann.travel.ai.flight.config;
 
 import am.hhovhann.travel.ai.core.a2a.ChatClientAgentExecutor;
 import am.hhovhann.travel.ai.core.a2a.McpToolInvoker;
+import am.hhovhann.travel.ai.core.guardrail.GuardedToolCallback;
+import am.hhovhann.travel.ai.core.guardrail.InputGuardrailAdvisor;
+import am.hhovhann.travel.ai.core.guardrail.UntrustedContent;
 import io.a2a.server.agentexecution.AgentExecutor;
 import io.modelcontextprotocol.client.McpSyncClient;
 import org.springframework.ai.chat.client.ChatClient;
@@ -43,7 +46,8 @@ public class FlightAgentConfig {
 
     @Bean
     public ChatClient flightChatClient(ChatClient.Builder builder, ToolCallbackProvider mcpTools, ChatMemory chatMemory,
-                                       @Value("${spring.ai.openai.timeout}") Duration llmTimeout) {
+                                       @Value("${spring.ai.openai.timeout}") Duration llmTimeout,
+                                       @Value("${guardrails.max-input-chars}") int maxInputChars) {
         // The LLM searches and explains; it cannot book (see STRUCTURED_TOOLS)
         ToolCallback[] llmTools = Arrays.stream(mcpTools.getToolCallbacks())
                 .filter(tool -> !tool.getToolDefinition().name().contains("book_flight"))
@@ -52,10 +56,13 @@ public class FlightAgentConfig {
                 // Spring AI 2.0.1 sends a 60s timeout with every request unless set on the chat options,
                 // which overrides spring.ai.openai.timeout; pass the configured value through explicitly
                 .defaultOptions(OpenAiChatOptions.builder().timeout(llmTimeout))
-                .defaultSystem(SYSTEM_PROMPT)
-                .defaultToolCallbacks(llmTools)
+                .defaultSystem(SYSTEM_PROMPT + UntrustedContent.SYSTEM_PROMPT_RULE)
+                // MCP results reach the LLM marked as untrusted data, with suspected injections redacted
+                .defaultToolCallbacks(GuardedToolCallback.guard(llmTools))
+                // InputGuardrailAdvisor runs first, so a rejected request never reaches the model or the memory;
                 // SimpleLoggerAdvisor logs each prompt and response at DEBUG (see docs/ONBOARDING.md)
-                .defaultAdvisors(MessageChatMemoryAdvisor.builder(chatMemory).build(), new SimpleLoggerAdvisor())
+                .defaultAdvisors(new InputGuardrailAdvisor(maxInputChars), MessageChatMemoryAdvisor.builder(chatMemory).build(),
+                        new SimpleLoggerAdvisor())
                 .build();
     }
 

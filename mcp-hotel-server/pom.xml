@@ -18,6 +18,11 @@
             <groupId>org.springframework.ai</groupId>
             <artifactId>spring-ai-starter-mcp-server-webmvc</artifactId>
         </dependency>
+        <!-- Reads INTERNAL_API_TOKEN from .env, like the other services -->
+        <dependency>
+            <groupId>me.paulschwarz</groupId>
+            <artifactId>springboot4-dotenv</artifactId>
+        </dependency>
 
         <dependency>
             <groupId>org.springframework.boot</groupId>

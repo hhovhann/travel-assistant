@@ -3,13 +3,14 @@
 ## Prerequisites
 - [ ] Java 27 installed (`java -version`), or Docker for the compose setup
 - [ ] `OPENAI_API_KEY` exported or set in `.env`
+- [ ] `INTERNAL_API_TOKEN` set in `.env` (or let `start-dev.sh` generate one)
 - [ ] Ports 8080, 8081, 8082, 8083 and 9000 are free
 
 ## Build
 ```bash
 ./mvnw clean install
 ```
-- [ ] All modules compile and the 38 unit tests pass
+- [ ] All modules compile and the 81 unit tests pass
 - [ ] Each service module has an executable jar in `target/`
 
 ## Startup
@@ -31,7 +32,7 @@
 - [ ] The orchestrator chat returns an itinerary with flight and hotel IDs taken from the agents
 
 ## Booking accuracy
-- [ ] `./mvnw test` passes (38 tests: invented IDs, wrong passenger counts, missing names and bad dates are
+- [ ] `./mvnw test` passes (booking tests: invented IDs, wrong passenger counts, missing names and bad dates are
       rejected; confirm books exactly the proposal; a proposal cannot be confirmed twice)
 - [ ] Choosing an option and giving the traveller names shows a booking card with exactly the presented IDs,
       dates and prices, and a total equal to the sum of the offers
@@ -45,10 +46,19 @@
       same dates and destination
 - [ ] "New conversation" starts without the previous context
 
+## Security
+- [ ] `./scripts/test-api.sh` step 6: MCP and A2A calls without the token return `401`, the injection is `PROMPT_INJECTION`
+- [ ] Agent cards list the `internalToken` security scheme; `/.well-known/agent-card.json` needs no token
+- [ ] All services listen on `127.0.0.1` only (`lsof -iTCP -sTCP:LISTEN`)
+- [ ] A service started without `INTERNAL_API_TOKEN` fails at startup with a clear message
+- [ ] "Ignore all previous instructions" in the chat UI is blocked and does not appear in later answers
+- [ ] A message over 2000 characters returns `INPUT_TOO_LONG`; more than 20 chat requests a minute return `429`
+
 ## Docker
 ```bash
-OPENAI_API_KEY=... docker compose up --build
+docker compose up --build   # with OPENAI_API_KEY and INTERNAL_API_TOKEN in .env
 ```
 - [ ] All five containers start (the agents may restart once while the MCP servers boot)
+- [ ] Only port 9000 is published (`docker compose ps`)
 - [ ] `http://localhost:9000/api/v1/travel/agents/status` shows both agents available with `http://flight-agent:8080`
       and `http://hotel-agent:8082` endpoints

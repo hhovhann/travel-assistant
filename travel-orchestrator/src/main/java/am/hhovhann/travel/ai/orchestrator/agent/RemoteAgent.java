@@ -1,5 +1,6 @@
 package am.hhovhann.travel.ai.orchestrator.agent;
 
+import am.hhovhann.travel.ai.core.security.InternalAuth;
 import io.a2a.A2A;
 import io.a2a.client.Client;
 import io.a2a.client.ClientEvent;
@@ -9,6 +10,7 @@ import io.a2a.client.TaskUpdateEvent;
 import io.a2a.client.config.ClientConfig;
 import io.a2a.client.transport.jsonrpc.JSONRPCTransport;
 import io.a2a.client.transport.jsonrpc.JSONRPCTransportConfig;
+import io.a2a.client.transport.spi.interceptors.auth.AuthInterceptor;
 import io.a2a.spec.A2AClientException;
 import io.a2a.spec.AgentCard;
 import io.a2a.spec.Artifact;
@@ -42,12 +44,17 @@ public class RemoteAgent {
     private final String name;
     private final String baseUrl;
     private final Duration timeout;
+    private final String internalToken;
     private volatile Client client;
 
-    public RemoteAgent(String name, String baseUrl, Duration timeout) {
+    /**
+     * @param internalToken sent as a bearer token to agents whose card declares the {@link InternalAuth#SCHEME} scheme
+     */
+    public RemoteAgent(String name, String baseUrl, Duration timeout, String internalToken) {
         this.name = name;
         this.baseUrl = baseUrl;
         this.timeout = timeout;
+        this.internalToken = internalToken;
     }
 
     public String name() {
@@ -153,13 +160,24 @@ public class RemoteAgent {
                                     .setStreaming(false)
                                     .setAcceptedOutputModes(List.of("text/plain", "application/json"))
                                     .build())
-                            .withTransport(JSONRPCTransport.class, new JSONRPCTransportConfig())
+                            .withTransport(JSONRPCTransport.class, transportConfig())
                             .build();
                 }
                 current = client;
             }
         }
         return current;
+    }
+
+    /**
+     * The SDK's {@link AuthInterceptor} reads the security schemes from the agent card and asks for the matching
+     * credential, so the token is only sent to agents that declare the internal scheme.
+     */
+    private JSONRPCTransportConfig transportConfig() {
+        JSONRPCTransportConfig config = new JSONRPCTransportConfig();
+        config.setInterceptors(List.of(new AuthInterceptor(
+                (scheme, context) -> InternalAuth.SCHEME.equals(scheme) ? internalToken : null)));
+        return config;
     }
 
     private String describe(Task task) {

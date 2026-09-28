@@ -1,4 +1,6 @@
 server:
+  # Loopback only by default; docker compose sets SERVER_ADDRESS=0.0.0.0
+  address: ${SERVER_ADDRESS:127.0.0.1}
   port: 9000
 
 spring:
@@ -25,3 +27,13 @@ agents:
     url: ${AGENTS_HOTEL_URL:http://localhost:8082}
   # Keep equal to the agents' AGENT_TIMEOUT_SECONDS; the orchestrator adds a short grace period on top
   timeout: ${AGENT_TIMEOUT_SECONDS:300}s
+
+internal:
+  # Shared service token, sent to the agents (their agent cards declare it)
+  api-token: ${INTERNAL_API_TOKEN:}
+
+guardrails:
+  # Longest chat message accepted from a traveller
+  max-input-chars: ${GUARDRAIL_MAX_INPUT_CHARS:2000}
+  # Chat and plan requests per client IP per minute; each one can cost several LLM calls
+  requests-per-minute: ${RATE_LIMIT_PER_MINUTE:20}

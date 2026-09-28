@@ -1,5 +1,9 @@
 package am.hhovhann.travel.ai.orchestrator.config;
 
+import am.hhovhann.travel.ai.core.guardrail.GuardedToolCallback;
+import am.hhovhann.travel.ai.core.guardrail.InputGuardrailAdvisor;
+import am.hhovhann.travel.ai.core.guardrail.UntrustedContent;
+import am.hhovhann.travel.ai.core.security.InternalAuth;
 import am.hhovhann.travel.ai.orchestrator.agent.RemoteAgent;
 import am.hhovhann.travel.ai.orchestrator.agent.TravelAgentTools;
 import am.hhovhann.travel.ai.orchestrator.booking.BookingService;
@@ -9,6 +13,7 @@ import org.springframework.ai.chat.client.advisor.MessageChatMemoryAdvisor;
 import org.springframework.ai.chat.client.advisor.SimpleLoggerAdvisor;
 import org.springframework.ai.chat.memory.ChatMemory;
 import org.springframework.ai.openai.OpenAiChatOptions;
+import org.springframework.ai.support.ToolCallbacks;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -55,28 +60,36 @@ public class OrchestratorConfig {
 
     @Bean
     public RemoteAgent flightAgent(@Value("${agents.flight.url}") String url,
-                                   @Value("${agents.timeout:300s}") Duration timeout) {
-        return new RemoteAgent("Flight Agent", url, timeout);
+                                   @Value("${agents.timeout:300s}") Duration timeout,
+                                   @Value("${internal.api-token:}") String internalToken) {
+        return new RemoteAgent("Flight Agent", url, timeout, InternalAuth.requireToken(internalToken));
     }
 
     @Bean
     public RemoteAgent hotelAgent(@Value("${agents.hotel.url}") String url,
-                                  @Value("${agents.timeout:300s}") Duration timeout) {
-        return new RemoteAgent("Hotel Agent", url, timeout);
+                                  @Value("${agents.timeout:300s}") Duration timeout,
+                                  @Value("${internal.api-token:}") String internalToken) {
+        return new RemoteAgent("Hotel Agent", url, timeout, InternalAuth.requireToken(internalToken));
     }
 
     @Bean
     public ChatClient orchestratorChatClient(ChatClient.Builder builder, ChatMemory chatMemory,
                                              RemoteAgent flightAgent, RemoteAgent hotelAgent, BookingService bookingService,
-                                             @Value("${spring.ai.openai.timeout}") Duration llmTimeout) {
+                                             @Value("${spring.ai.openai.timeout}") Duration llmTimeout,
+                                             @Value("${guardrails.max-input-chars}") int maxInputChars) {
         return builder
                 // Spring AI 2.0.1 sends a 60s timeout with every request unless set on the chat options,
                 // which overrides spring.ai.openai.timeout; pass the configured value through explicitly
                 .defaultOptions(OpenAiChatOptions.builder().timeout(llmTimeout))
-                .defaultSystem(SYSTEM_PROMPT)
-                .defaultTools(new TravelAgentTools(flightAgent, hotelAgent), new BookingTools(bookingService))
+                .defaultSystem(SYSTEM_PROMPT + UntrustedContent.SYSTEM_PROMPT_RULE)
+                // Agent answers and booking results reach the LLM marked as untrusted data, with suspected
+                // injections redacted: an agent's answer may quote supplier text
+                .defaultToolCallbacks(GuardedToolCallback.guard(ToolCallbacks.from(
+                        new TravelAgentTools(flightAgent, hotelAgent), new BookingTools(bookingService))))
+                // InputGuardrailAdvisor runs first, so a rejected message never reaches the model or the memory;
                 // SimpleLoggerAdvisor logs each prompt and response at DEBUG (see docs/ONBOARDING.md)
-                .defaultAdvisors(MessageChatMemoryAdvisor.builder(chatMemory).build(), new SimpleLoggerAdvisor())
+                .defaultAdvisors(new InputGuardrailAdvisor(maxInputChars), MessageChatMemoryAdvisor.builder(chatMemory).build(),
+                        new SimpleLoggerAdvisor())
                 .build();
     }
 }

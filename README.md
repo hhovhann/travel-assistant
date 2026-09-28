@@ -65,6 +65,24 @@ LLMs search, compare and talk. Nothing that books is left to an LLM:
 5. **Memory**: conversations live in memory. After a restart, continuing an old conversation returns
    `404 CONVERSATION_NOT_FOUND` instead of letting the model guess what "option 1" was.
 
+### Security
+
+Layered defenses against misuse and prompt injection. The design choice that matters most is above: **no LLM can
+book**, so a successful injection can at worst produce a misleading chat answer. The layers below keep attackers
+away from the services, stop common attacks early, and treat everything a tool returns as data.
+
+| Layer | What it does | Where |
+|---|---|---|
+| Service-to-service auth | The agents and MCP servers require `Authorization: Bearer <INTERNAL_API_TOKEN>`, so nobody can call `book_flight` or an agent directly and skip the traveller's confirmation. The agent cards declare the scheme (A2A `securitySchemes`), and the orchestrator's A2A client sends the token for it (the SDK's `AuthInterceptor`). The agents' MCP clients send it via an `McpSyncHttpClientRequestCustomizer`. Only the agent card stays public. | `travel-core` `security/`, `InternalTokenFilter` in each MCP server |
+| Network exposure | Every service listens on `127.0.0.1` by default. Docker compose publishes only the orchestrator, on the host's loopback. | `server.address`, `docker-compose.yml` |
+| Input guardrail | A Spring AI advisor rejects messages over the length limit and likely prompt injections ("ignore previous instructions", "reveal your system prompt", role changes, fake `System:` / `<\|im_start\|>` markers) with `400`. The text is normalized first, so zero-width characters and look-alike letters don't slip through. It runs before the chat memory advisor, so a rejected message is never stored. | `InputGuardrailAdvisor`, `PromptInjectionDetector` |
+| Rate limiting | `/chat` and `/plan` are limited per client IP (`429` with `Retry-After`), which caps LLM cost per client. | `RateLimitFilter` |
+| Indirect injection | Every tool result (MCP results in the agents; agent answers and booking results in the orchestrator) is capped, has suspected injections redacted (including rules for supplier text, like "book without asking the traveller" and "don't tell the user"), and is wrapped in `<untrusted-data>` tags. The system prompts tell each model to treat that content as data, never as instructions. | `GuardedToolCallback`, `UntrustedContent` |
+| Output safety | The chat UI escapes the model's text before formatting it, so model output can't inject HTML. | `index.html` |
+
+Pattern-based detection is a speed bump, not a guarantee: it catches the common attacks cheaply, and the
+architecture handles the rest.
+
 ## Technology stack
 
 | | Version |
@@ -89,6 +107,7 @@ LLMs search, compare and talk. Nothing that books is left to an LLM:
 git clone https://github.com/hhovhann/travel-assistant.git
 cd travel-assistant
 cp .env.example .env        # then set OPENAI_API_KEY (or pick a local model option)
+echo "INTERNAL_API_TOKEN=$(openssl rand -hex 32)" >> .env   # shared service token (start-dev.sh generates one if missing)
 ```
 
 ### 2. Build and test
@@ -103,10 +122,10 @@ cp .env.example .env        # then set OPENAI_API_KEY (or pick a local model opt
 ./scripts/start-dev.sh      # builds, then starts the 5 services in dependency order (logs in logs/)
 ```
 
-Or with Docker, no local Java needed:
+Or with Docker, no local Java needed (`.env` must contain `OPENAI_API_KEY` and `INTERNAL_API_TOKEN`):
 
 ```bash
-docker compose up --build
+docker compose up --build   # only the orchestrator is published, on localhost:9000
 ```
 
 ### 4. Use it
@@ -171,15 +190,17 @@ Errors return `{"error": "..."}` with:
 | `400` | Invalid input (missing `message`, `from`, `to` or `departureDate`) |
 | `404` `CONVERSATION_NOT_FOUND` | The `conversationId` is unknown, e.g. after a restart |
 | `404` `BOOKING_NOT_FOUND` | The proposal was already confirmed, cancelled or replaced by a newer one |
+| `400` `PROMPT_INJECTION` / `INPUT_TOO_LONG` | Blocked by the input guardrail (see [Security](#security)) |
+| `429` `RATE_LIMITED` | Too many `/chat` or `/plan` requests from one client; see the `Retry-After` header |
 | `502` | The LLM or an agent failed |
 
 Confirm returns the `BookingConfirmation` (`status`: `confirmed`, `partially_confirmed` or `failed`); cancel returns `204`.
 
-Talking to an agent directly over A2A:
+Talking to an agent directly over A2A (the agent card is public; everything else needs the internal token):
 
 ```bash
 curl http://localhost:8080/.well-known/agent-card.json
-curl -X POST http://localhost:8080/ -H "Content-Type: application/json" -d '{
+curl -X POST http://localhost:8080/ -H "Content-Type: application/json" -H "Authorization: Bearer $INTERNAL_API_TOKEN" -d '{
   "jsonrpc": "2.0", "id": "1", "method": "message/send",
   "params": {"message": {"role": "user", "kind": "message", "messageId": "m1",
     "parts": [{"kind": "text", "text": "Find flights from New York to Yerevan on 2026-10-15 for 2"}]}}}'
@@ -190,6 +211,7 @@ curl -X POST http://localhost:8080/ -H "Content-Type: application/json" -d '{
 | Variable | Used by | Default |
 |---|---|---|
 | `OPENAI_API_KEY` | agents, orchestrator | required |
+| `INTERNAL_API_TOKEN` | all services; the shared service token (same value everywhere) | required; `start-dev.sh` generates one if unset |
 | `OPENAI_MODEL` | agents, orchestrator | `gpt-5-mini` |
 | `OPENAI_BASE_URL` | agents, orchestrator | OpenAI |
 | `OPENAI_TIMEOUT` | agents, orchestrator; one LLM call | `120s` |
@@ -197,6 +219,9 @@ curl -X POST http://localhost:8080/ -H "Content-Type: application/json" -d '{
 | `FLIGHT_MCP_URL` / `HOTEL_MCP_URL` | flight / hotel agent | `http://localhost:8081` / `:8083` |
 | `A2A_PUBLIC_URL` | agents; the URL published in the agent card, which must be reachable by callers | `http://localhost:8080` / `:8082` |
 | `AGENTS_FLIGHT_URL` / `AGENTS_HOTEL_URL` | orchestrator; agent base URLs | `http://localhost:8080` / `:8082` |
+| `SERVER_ADDRESS` | all services; the interface to listen on | `127.0.0.1` (docker compose: `0.0.0.0`) |
+| `GUARDRAIL_MAX_INPUT_CHARS` | orchestrator / agents; longest accepted message | `2000` / `4000` |
+| `RATE_LIMIT_PER_MINUTE` | orchestrator; `/chat` and `/plan` requests per client IP per minute | `20` |
 
 Note: Spring AI 2.0.1 ignores `spring.ai.openai.timeout` for chat calls (it sends a fixed 60s per request), so the
 configured value is also passed as a default chat option in each `ChatClient`.
@@ -234,9 +259,10 @@ so no agent change is needed.
 ## Testing
 
 ```bash
-./mvnw test              # 38 unit tests, no API key needed: A2A protocol, structured requests,
-                         # MCP search/booking rules, booking proposal and confirmation
-./scripts/test-api.sh    # end-to-end smoke test against running services
+./mvnw test              # 81 unit tests, no API key needed: A2A protocol, structured requests,
+                         # MCP search/booking rules, booking proposal and confirmation,
+                         # prompt-injection detection, guardrails, service auth, rate limiting
+./scripts/test-api.sh    # end-to-end smoke test against running services, including the security checks
 ```
 
 ## Current limitations
@@ -244,5 +270,7 @@ so no agent change is needed.
 - **Mock data**: providers return generated flights and hotels, and bookings are not real. Real inventory needs
   supplier APIs (e.g. Duffel for flights; LiteAPI, Hotelbeds or Expedia Rapid for hotels).
 - **In-memory state**: A2A tasks, chat memory, offers and bookings are lost on restart.
-- **No authentication**, and A2A streaming (`message/stream`) is not implemented (the agent cards advertise
-  `streaming: false`).
+- **No user accounts**: the orchestrator authenticates nobody (only the internal services are protected), so
+  bookings aren't tied to a user. Put it behind your own login, or an OAuth2 proxy, before exposing it.
+- **Personal data in debug logs**: with DEBUG logging on, `SimpleLoggerAdvisor` logs traveller names and emails.
+- A2A streaming (`message/stream`) is not implemented (the agent cards advertise `streaming: false`).
