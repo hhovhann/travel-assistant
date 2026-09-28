@@ -6,34 +6,23 @@
 
     <parent>
         <groupId>am.hhovhann.travel.ai</groupId>
-        <artifactId>travel-ai-application</artifactId>
+        <artifactId>travel-assistant</artifactId>
         <version>1.0.0</version>
     </parent>
 
     <artifactId>mcp-hotel-server</artifactId>
 
     <dependencies>
+        <!-- Standard MCP server (Streamable HTTP transport) on Spring MVC -->
         <dependency>
-            <groupId>am.hhovhann.travel.ai</groupId>
-            <artifactId>travel-ai-core</artifactId>
-            <version>1.0.0</version>
+            <groupId>org.springframework.ai</groupId>
+            <artifactId>spring-ai-starter-mcp-server-webmvc</artifactId>
         </dependency>
+
         <dependency>
             <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-web</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-data-jpa</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>com.h2database</groupId>
-            <artifactId>h2</artifactId>
-            <scope>runtime</scope>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
         </dependency>
     </dependencies>
 

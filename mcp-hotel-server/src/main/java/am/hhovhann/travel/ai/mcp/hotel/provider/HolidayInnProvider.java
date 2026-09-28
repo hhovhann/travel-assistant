@@ -26,7 +26,6 @@ public class HolidayInnProvider implements HotelProvider {
             hotel.put("name", "Holiday Inn " + destination + " " + (i == 1 ? "Express" : "& Suites"));
             hotel.put("address", (200 + i * 30) + " Business Drive, " + destination);
             hotel.put("city", destination);
-            hotel.put("country", "USA");
             hotel.put("starRating", 3);
             hotel.put("pricePerNight", 120.00 + (i * 40));
             hotel.put("currency", "USD");

@@ -1,272 +1,202 @@
 # Travel AI Application
 
-A comprehensive multi-agent travel planning system built with Spring AI, java 25 Virtual Threads, and Model Context Protocol (MCP) servers. The application demonstrates agent-to-agent (A2A) communication for coordinated flight and hotel booking.
+A multi-agent travel planning assistant built with Spring AI, the Agent2Agent (A2A) protocol and the Model Context
+Protocol (MCP). You describe a trip in plain language; an orchestrator agent asks a Flight Agent and a Hotel Agent,
+which use MCP tools to query (mock) airline and hotel providers, and combines the results into an itinerary.
 
 ## Architecture
 
-The system consists of several microservices that work together:
-
 ```
-┌─────────────────┐    ┌───────────────────┐    ┌─────────────────┐
-│  Flight Agent   │◄──►│Travel Orchestrator│◄──►│  Hotel Agent    │
-│   (Port 8080)   │    │   (Port 9000)     │    │   (Port 8082)   │
-└─────┬───────────┘    └───────────────────┘    └─────┬───────────┘
-      │                                               │
-      ▼                                               ▼
-┌─────────────────┐                             ┌─────────────────┐
-│ Flight MCP      │                             │ Hotel MCP       │
-│ Server          │                             │ Server          │
-│ (Port 8081)     │                             │ (Port 8083)     │
-└─────┬───────────┘                             └─────┬───────────┘
-      │                                               │
-      ▼                                               ▼
-┌─────────────────┐                             ┌─────────────────┐
-│ Flight Providers│                             │ Hotel Providers │
-│ • Joyair        │                             │ • Marriott      │
-│ • AeroGo        │                             │ • Holiday Inn   │
-│ • DracAir       │                             │ • Accor         │
-└─────────────────┘                             └─────────────────┘
+            Browser chat UI / REST
+                     │
+          ┌──────────▼──────────┐
+          │ Travel Orchestrator │  LLM with two tools: askFlightAgent, askHotelAgent
+          │      (:9000)        │
+          └──────┬───────┬──────┘
+          A2A    │       │    A2A (JSON-RPC, protocol 0.3.0)
+      ┌──────────▼──┐  ┌─▼───────────┐
+      │ Flight Agent│  │ Hotel Agent │  LLM + MCP client
+      │   (:8080)   │  │   (:8082)   │
+      └──────┬──────┘  └──────┬──────┘
+         MCP │ (Streamable HTTP)  │ MCP
+      ┌──────▼──────┐  ┌──────▼──────┐
+      │ Flight MCP  │  │  Hotel MCP  │  @McpTool methods
+      │   (:8081)   │  │   (:8083)   │
+      └──────┬──────┘  └──────┬──────┘
+   Joyair, AeroGo, DracAir    Marriott, Holiday Inn, Accor   (mock providers)
 ```
 
-## Key Features
+- **Orchestrator**: exposes the REST API and the chat UI. Its LLM decides which agent to call and what to ask; it
+  never routes by keywords. It can only *propose* a booking; the traveller confirms it in the UI. The conversation id is sent to the agents as the A2A `contextId`, so follow-ups
+  ("make the hotel cheaper") keep their context end to end.
+- **Agents**: standard A2A servers. The agent card is at `/.well-known/agent-card.json` and JSON-RPC is at `POST /`.
+  Text requests go to the agent's LLM, which extracts the search parameters and calls the MCP tools. Structured
+  requests (`DataPart`) run the allowed MCP tool directly; this is the only way to book.
+- **MCP servers**: standard MCP servers (Streamable HTTP at `/mcp`) that any MCP client can use, including Claude
+  Desktop or MCP Inspector. Each one aggregates several providers.
 
-- **Multi-Agent Architecture**: Flight and Hotel agents that specialize in their domains
-- **A2A Communication**: Agents communicate using the Agent-to-Agent protocol
-- **MCP Integration**: Model Context Protocol servers for each domain
-- **Multiple Providers**: Each MCP server aggregates multiple service providers
-- **Spring AI Integration**: Uses OpenAI GPT-4 for intelligent conversation handling
-- **Virtual Threads**: java 25 virtual threads for efficient concurrent processing
+### MCP tools
 
-## Technology Stack
+| Server | Tools |
+|---|---|
+| Flight MCP (:8081) | `search_flights` (with `returnDate` also returns the return leg), `get_offer`, `book_flight`, `get_booking`, `get_flight_status`, `get_recommendations` |
+| Hotel MCP (:8083) | `search_hotels`, `search_near_airport`, `get_offer`, `book_hotel`, `get_booking`, `get_hotel_details`, `get_recommendations` |
 
-- **java 25** with Virtual Threads
-- **Spring Boot 3.3.0**
-- **Spring AI 1.0.1 https://spring.io/blog/2025/08/08/spring-ai-1**
-- **A2A Java SDK 0.2.5 https://github.com/a2aproject/a2a-java**
-- **OpenAI GPT-4**
-- **H2 Database** (for development)
-- **Maven** (multi-module project)
+### How bookings stay accurate
 
-## Project Structure
+LLMs search, compare and talk. Nothing that books is left to an LLM:
 
-```
-travel-ai-application/
-├── travel-ai-core/           # Shared models and utilities
-├── flight-agent/             # Flight-specialized AI agent
-├── hotel-agent/              # Hotel-specialized AI agent
-├── mcp-flight-server/        # Flight MCP server with providers
-├── mcp-hotel-server/         # Hotel MCP server with providers
-├── travel-orchestrator/      # Main orchestration service
-└── pom.xml                   # Root Maven configuration
-```
+1. **Offers**: every search result is registered by the MCP server under a dated ID
+   (`JOY1:JFK-EVN:2026-10-15`, `HI1:Yerevan:2026-10-15:2026-10-20`) with a server-computed total price.
+2. **Proposal**: when the traveller picks an option, the orchestrator LLM calls `proposeBooking` with the chosen IDs
+   and traveller names. The orchestrator code fetches those exact offers (`get_offer`) and returns a
+   `pendingBooking` in the chat response. The UI shows it as a card with **Confirm** and **Cancel** buttons.
+3. **Confirm**: the card's Confirm button (`POST /api/v1/travel/bookings/{proposalId}/confirm`), or an explicit
+   typed confirmation such as "Yes, I confirm", books exactly that proposal. A typed confirmation is recognized by
+   the orchestrator code, not the LLM; anything less explicit ("yes, but a cheaper hotel") goes to the assistant. The orchestrator
+   sends the agents a structured A2A request (a `DataPart` such as
+   `{"tool": "book_flight", "arguments": {...}}`), which the agent executes directly against MCP, without its LLM.
+   The agents' LLMs have no booking tool at all. "What did I book?" is answered from the recorded bookings
+   (`getBookings`), not from the model's memory.
+4. **Validation**: the MCP servers accept only offer IDs returned by a search, one name per flight passenger, and
+   valid dates. Each booking gets a `bookingId` and can be read back with `get_booking`.
+5. **Memory**: conversations live in memory. After a restart, continuing an old conversation returns
+   `404 CONVERSATION_NOT_FOUND` instead of letting the model guess what "option 1" was.
 
-## Quick Start
+## Technology stack
 
-### Prerequisites
+| | Version |
+|---|---|
+| Java | 27 |
+| Spring Boot | 4.1.1 |
+| Spring AI (OpenAI, MCP client/server, chat memory) | 2.0.1 |
+| A2A Java SDK | 0.3.3.Final (latest stable; 1.0 is still Alpha) |
+| MCP Java SDK | 2.0.1 (via Spring AI) |
 
-1. **java 25** or later
-2. **Maven 3.6+**
-3. **OpenAI API Key**
+## Quick start
 
-### Setup
-
-1. **Clone the repository**:
-   ```bash
-   git clone https://github.com/hhovhann/TravelAiApplication.git
-   cd TravelAiApplication
-   ```
-
-2. **Set your OpenAI API Key**:
-   ```bash
-   export OPENAI_API_KEY=your_openai_api_key_here
-   ```
-
-3. **Build the project**:
-   ```bash
-   mvn clean install
-   ```
-
-### Running the Application
-
-Start each service in separate terminals:
-
-1. **Start MCP Flight Server**:
-   ```bash
-   cd mcp-flight-server
-   mvn spring-boot:run
-   ```
-   Server will start on http://localhost:8081
-
-2. **Start MCP Hotel Server**:
-   ```bash
-   cd mcp-hotel-server
-   mvn spring-boot:run
-   ```
-   Server will start on http://localhost:8083
-
-3. **Start Flight Agent**:
-   ```bash
-   cd flight-agent
-   mvn spring-boot:run
-   ```
-   Agent will start on http://localhost:8080
-
-4. **Start Hotel Agent**:
-   ```bash
-   cd hotel-agent
-   mvn spring-boot:run
-   ```
-   Agent will start on http://localhost:8082
-
-5. **Start Travel Orchestrator**:
-   ```bash
-   cd travel-orchestrator
-   mvn spring-boot:run
-   ```
-   Main application will start on http://localhost:9000
-
-### Using Docker (Alternative)
+Prerequisites: Java 27 and an OpenAI API key. Maven is not needed; the wrapper `./mvnw` is included.
 
 ```bash
-# Build all services
-docker-compose build
-
-# Start all services
-docker-compose up
+export OPENAI_API_KEY=sk-...        # or put OPENAI_API_KEY=sk-... in a .env file in the project root
+./scripts/start-dev.sh              # builds, then starts the 5 services in dependency order
+open http://localhost:9000          # chat UI
+./scripts/test-api.sh               # smoke test of every layer
+./scripts/stop-dev.sh
 ```
 
-## API Usage
-
-### Plan a Trip
+Or with Docker (no local Java needed):
 
 ```bash
-curl -X POST http://localhost:9000/api/travel/plan \
-  -H "Content-Type: application/json" \
-  -d '{
-    "from": "New York",
-    "to": "London",
-    "departureDate": "2024-12-15",
-    "returnDate": "2024-12-22",
-    "passengers": 2,
-    "preferences": "business class, luxury hotel near city center"
-  }'
+OPENAI_API_KEY=sk-... docker compose up --build
 ```
 
-### Chat with Travel AI
+To run a single service from the IDE or the command line, start the MCP servers first (the agents connect to them at
+startup): `java -jar mcp-flight-server/target/mcp-flight-server-1.0.0.jar`, and so on.
+
+### Using a local model (no API key) or another provider
+
+Copy `.env.example` to `.env` and uncomment one option. Any OpenAI-compatible endpoint works through the same
+three variables, `OPENAI_BASE_URL`, `OPENAI_API_KEY` and `OPENAI_MODEL`, for example:
 
 ```bash
-curl -X POST http://localhost:9000/api/travel/chat \
-  -H "Content-Type: application/json" \
-  -d '{
-    "message": "I need to find flights from NYC to Paris for next month"
-  }'
+# LM Studio: load a model with tool calling (e.g. qwen/qwen3-14b), then start its server on port 1234
+OPENAI_BASE_URL=http://127.0.0.1:1234/v1
+OPENAI_API_KEY=lm-studio
+OPENAI_MODEL=qwen/qwen3-14b
+OPENAI_TIMEOUT=10m            # local models are slow
+AGENT_TIMEOUT_SECONDS=900
 ```
 
-### Check Agent Status
+The model must support tool calling. Local models are slower and less accurate than hosted ones: a full trip plan
+with a 14B model on a laptop takes a few minutes. For another provider (e.g. Anthropic), swap
+`spring-ai-starter-model-openai` for that provider's Spring AI starter in the agent and orchestrator POMs.
+
+## API
 
 ```bash
-curl http://localhost:9000/api/travel/agents/status
+# Chat. Send the returned conversationId back to continue the same conversation.
+curl -X POST http://localhost:9000/api/v1/travel/chat -H "Content-Type: application/json" \
+  -d '{"message": "Plan a 5-day trip to Armenia from New York in mid October for 2 people, mid-range"}'
+
+# Structured trip request. tripId can be used as conversationId in /chat to refine or book.
+curl -X POST http://localhost:9000/api/v1/travel/plan -H "Content-Type: application/json" \
+  -d '{"from": "New York", "to": "Yerevan", "departureDate": "2026-10-15", "returnDate": "2026-10-20",
+       "passengers": 2, "preferences": "mid-range hotel near the center"}'
+
+# Confirm or cancel a booking proposal (returned as pendingBooking by /chat)
+curl -X POST http://localhost:9000/api/v1/travel/bookings/BP-1A2B3C4D/confirm
+curl -X POST http://localhost:9000/api/v1/travel/bookings/BP-1A2B3C4D/cancel
+
+# Live status of the agents, read from their agent cards
+curl http://localhost:9000/api/v1/travel/agents/status
 ```
 
-## How It Works
+Errors return `400` for invalid input and `502` when the LLM or an agent fails, with `{"error": "..."}`.
 
-1. **User Request**: The Travel Orchestrator receives user requests
-2. **Intent Analysis**: Spring AI analyzes the request to determine which agents to involve
-3. **Agent Coordination**: The orchestrator communicates with Flight and Hotel agents using A2A protocol
-4. **MCP Integration**: Each agent calls its respective MCP server for data
-5. **Provider Aggregation**: MCP servers aggregate data from multiple providers (Joyair, AeroGo, DracAir for flights; Marriott, Holiday Inn, Accor for hotels)
-6. **Response Synthesis**: The orchestrator combines agent responses into a comprehensive travel plan
+Talking to an agent directly over A2A:
 
-## Agent Communication Flow
-
-```mermaid
-sequenceDiagram
-    participant User
-    participant Orchestrator
-    participant FlightAgent
-    participant HotelAgent
-    participant FlightMCP
-    participant HotelMCP
-
-    User->>Orchestrator: "Plan trip to London"
-    Orchestrator->>FlightAgent: A2A Message: Search flights
-    FlightAgent->>FlightMCP: MCP Tool Call: search_flights
-    FlightMCP-->>FlightAgent: Flight options
-    FlightAgent-->>Orchestrator: Flight recommendations
-    
-    Orchestrator->>HotelAgent: A2A Message: Find hotels in London
-    HotelAgent->>HotelMCP: MCP Tool Call: search_hotels
-    HotelMCP-->>HotelAgent: Hotel options
-    HotelAgent-->>Orchestrator: Hotel recommendations
-    
-    Orchestrator-->>User: Complete travel plan
+```bash
+curl http://localhost:8080/.well-known/agent-card.json
+curl -X POST http://localhost:8080/ -H "Content-Type: application/json" -d '{
+  "jsonrpc": "2.0", "id": "1", "method": "message/send",
+  "params": {"message": {"role": "user", "kind": "message", "messageId": "m1",
+    "parts": [{"kind": "text", "text": "Find flights from New York to Yerevan on 2026-10-15 for 2"}]}}}'
 ```
 
 ## Configuration
 
-### Environment Variables
+| Variable | Used by | Default |
+|---|---|---|
+| `OPENAI_API_KEY` | agents, orchestrator | required |
+| `OPENAI_MODEL` | agents, orchestrator | `gpt-5-mini` |
+| `OPENAI_BASE_URL` | agents, orchestrator | OpenAI |
+| `OPENAI_TIMEOUT` | agents, orchestrator; one LLM call | `120s` |
+| `AGENT_TIMEOUT_SECONDS` | agents and orchestrator; one agent task (all its LLM + tool calls) | `300` |
+| `FLIGHT_MCP_URL` / `HOTEL_MCP_URL` | flight / hotel agent | `http://localhost:8081` / `:8083` |
+| `A2A_PUBLIC_URL` | agents; the URL published in the agent card, which must be reachable by callers | `http://localhost:8080` / `:8082` |
+| `AGENTS_FLIGHT_URL` / `AGENTS_HOTEL_URL` | orchestrator; agent base URLs | `http://localhost:8080` / `:8082` |
 
-- `OPENAI_API_KEY`: Your OpenAI API key (required)
-- `FLIGHT_MCP_URL`: Flight MCP server URL (default: http://localhost:8081)
-- `HOTEL_MCP_URL`: Hotel MCP server URL (default: http://localhost:8083)
+Note: Spring AI 2.0.1 ignores `spring.ai.openai.timeout` for chat calls (it sends a fixed 60s per request), so the
+configured value is also passed as a default chat option in each `ChatClient`.
 
-### Application Properties
+`AGENT_TIMEOUT_SECONDS` must be longer than the slowest agent run. When a blocking A2A `message/send` runs past it,
+the SDK returns the task as `working` and discards the late result. The orchestrator then reports a timeout.
+For local models use e.g. `OPENAI_TIMEOUT=10m` and `AGENT_TIMEOUT_SECONDS=900`.
 
-Each service has its own `application.yml` with specific configurations for ports, database connections, and AI model settings.
+## Project structure
 
-## Development
+```
+travel-core/        Shared A2A server support: JSON-RPC endpoint, SDK wiring, ChatClient-based AgentExecutor
+flight-agent/          A2A Flight Agent (LLM + MCP client)
+hotel-agent/           A2A Hotel Agent (LLM + MCP client)
+mcp-flight-server/     MCP server with flight tools and mock providers
+mcp-hotel-server/      MCP server with hotel tools and mock providers
+travel-orchestrator/   REST API, chat UI (static/index.html) and the orchestrating LLM
+```
 
-### Adding New Providers
+### Adding a provider
 
-1. **For Flight Providers**: Implement `FlightProvider` interface in `mcp-flight-server`
-2. **For Hotel Providers**: Implement `HotelProvider` interface in `mcp-hotel-server`
-3. **Register as Spring Component**: Use `@Component` annotation
+Implement `FlightProvider` (in `mcp-flight-server`) or `HotelProvider` (in `mcp-hotel-server`) as a Spring
+`@Component`. The MCP service aggregates all providers automatically.
 
-### Adding New Agent Capabilities
+### Adding a tool
 
-1. Extend agent skills in the A2A agent card definition
-2. Implement corresponding MCP tools
-3. Update agent processing logic
+Add an `@McpTool` method to `FlightMcpService` or `HotelMcpService`. The agents discover it through MCP at startup,
+so no agent change is needed.
 
 ## Testing
 
 ```bash
-# Run all tests
-mvn test
-
-# Run specific module tests
-cd flight-agent
-mvn test
+./mvnw test              # 38 unit tests, no API key needed: A2A protocol, structured requests,
+                         # MCP search/booking rules, booking proposal and confirmation
+./scripts/test-api.sh    # end-to-end smoke test against running services
 ```
 
-## Monitoring
+## Current limitations
 
-- **H2 Console**: Available for each MCP server for database inspection
-- **Application Logs**: Configured for DEBUG level during development
-- **Agent Status**: Check via `/api/travel/agents/status` endpoint
-
-## Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Add tests
-5. Submit a pull request
-
-## License
-
-This project is licensed under the MIT License - see the LICENSE file for details.
-
-## Troubleshooting
-
-### Common Issues
-
-1. **OpenAI API Key**: Ensure your API key is set correctly
-2. **Port Conflicts**: Check that all required ports (8080-8083, 9000) are available
-3. **A2A SDK**: The A2A SDK is not yet in Maven Central - build it locally if needed
-
-### Getting Help
-
-- Check the logs for detailed error messages
-- Verify all services are running on their expected ports
-- Ensure network connectivity between services
+- **Mock data**: providers return generated flights and hotels, and bookings are not real. Real inventory needs
+  supplier APIs (e.g. Duffel for flights; LiteAPI, Hotelbeds or Expedia Rapid for hotels).
+- **In-memory state**: A2A tasks, chat memory, offers and bookings are lost on restart.
+- **No authentication**, and A2A streaming (`message/stream`) is not implemented (the agent cards advertise
+  `streaming: false`).

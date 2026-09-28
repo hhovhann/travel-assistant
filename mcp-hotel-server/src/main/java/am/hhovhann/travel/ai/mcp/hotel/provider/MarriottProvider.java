@@ -26,7 +26,6 @@ public class MarriottProvider implements HotelProvider {
             hotel.put("name", "Marriott " + destination + " " + getHotelType(i));
             hotel.put("address", (100 + i * 50) + " Main Street, " + destination);
             hotel.put("city", destination);
-            hotel.put("country", "USA");
             hotel.put("starRating", 4 + (i > 2 ? 1 : 0));
             hotel.put("pricePerNight", 180.00 + (i * 60));
             hotel.put("currency", "USD");

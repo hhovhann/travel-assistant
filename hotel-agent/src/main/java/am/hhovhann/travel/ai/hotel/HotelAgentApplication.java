@@ -1,10 +1,12 @@
 package am.hhovhann.travel.ai.hotel;
 
-import org.springframework.ai.model.tool.autoconfigure.ToolCallingAutoConfiguration;
+import am.hhovhann.travel.ai.core.a2a.A2AServerConfiguration;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.context.annotation.Import;
 
-@SpringBootApplication(scanBasePackages = "am.hhovhann.travel.ai", exclude = {ToolCallingAutoConfiguration.class})
+@SpringBootApplication
+@Import(A2AServerConfiguration.class)
 public class HotelAgentApplication {
     static void main(String[] args) {
         SpringApplication.run(HotelAgentApplication.class, args);

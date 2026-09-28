@@ -1,57 +1,49 @@
+# Usage: create .env from .env.example, then: docker compose up --build   and open http://localhost:9000
+x-agent-env: &llm-env
+  OPENAI_API_KEY: ${OPENAI_API_KEY:?set OPENAI_API_KEY}
+  OPENAI_MODEL: ${OPENAI_MODEL:-gpt-5-mini}
+  # For a local model use http://host.docker.internal:<port>/v1 (see .env.example)
+  OPENAI_BASE_URL: ${OPENAI_BASE_URL:-https://api.openai.com/v1}
+  OPENAI_TIMEOUT: ${OPENAI_TIMEOUT:-120s}
+  AGENT_TIMEOUT_SECONDS: ${AGENT_TIMEOUT_SECONDS:-300}
+
 services:
 
   mcp-flight-server:
-    build:
-      context: ./mcp-flight-server
-      dockerfile: Dockerfile
-    ports:
-      - "8081:8081"
-    environment:
-      - SPRING_PROFILES_ACTIVE=docker
+    build: { context: ., args: { MODULE: mcp-flight-server } }
+    ports: ["8081:8081"]
 
   mcp-hotel-server:
-    build:
-      context: ./mcp-hotel-server
-      dockerfile: Dockerfile
-    ports:
-      - "8083:8083"
-    environment:
-      - SPRING_PROFILES_ACTIVE=docker
+    build: { context: ., args: { MODULE: mcp-hotel-server } }
+    ports: ["8083:8083"]
 
   flight-agent:
-    build:
-      context: ./flight-agent
-      dockerfile: Dockerfile
-    ports:
-      - "8080:8080"
-    depends_on:
-      - mcp-flight-server
+    build: { context: ., args: { MODULE: flight-agent } }
+    ports: ["8080:8080"]
+    depends_on: [mcp-flight-server]
+    # The MCP client connects at startup; retry until the MCP server is up
+    restart: on-failure
     environment:
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
-      - FLIGHT_MCP_SERVER_URL=http://mcp-flight-server:8081
+      <<: *llm-env
+      FLIGHT_MCP_URL: http://mcp-flight-server:8081
+      # Published in the agent card: the URL the orchestrator uses to call this agent
+      A2A_PUBLIC_URL: http://flight-agent:8080
 
   hotel-agent:
-    build:
-      context: ./hotel-agent
-      dockerfile: Dockerfile
-    ports:
-      - "8082:8082"
-    depends_on:
-      - mcp-hotel-server
+    build: { context: ., args: { MODULE: hotel-agent } }
+    ports: ["8082:8082"]
+    depends_on: [mcp-hotel-server]
+    restart: on-failure
     environment:
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
-      - HOTEL_MCP_SERVER_URL=http://mcp-hotel-server:8083
+      <<: *llm-env
+      HOTEL_MCP_URL: http://mcp-hotel-server:8083
+      A2A_PUBLIC_URL: http://hotel-agent:8082
 
   travel-orchestrator:
-    build:
-      context: ./travel-orchestrator
-      dockerfile: Dockerfile
-    ports:
-      - "9000:9000"
-    depends_on:
-      - flight-agent
-      - hotel-agent
+    build: { context: ., args: { MODULE: travel-orchestrator } }
+    ports: ["9000:9000"]
+    depends_on: [flight-agent, hotel-agent]
     environment:
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
-      - AGENTS_FLIGHT_URL=http://flight-agent:8080
-      - AGENTS_HOTEL_URL=http://hotel-agent:8082
+      <<: *llm-env
+      AGENTS_FLIGHT_URL: http://flight-agent:8080
+      AGENTS_HOTEL_URL: http://hotel-agent:8082

@@ -29,7 +29,6 @@ public class AccorProvider implements HotelProvider {
             hotel.put("name", brands[i] + " " + destination);
             hotel.put("address", (300 + i * 40) + " International Ave, " + destination);
             hotel.put("city", destination);
-            hotel.put("country", "USA");
             hotel.put("starRating", starRatings[i]);
             hotel.put("pricePerNight", basePrices[i]);
             hotel.put("currency", "USD");

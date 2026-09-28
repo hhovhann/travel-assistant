@@ -1,73 +1,44 @@
 #!/bin/bash
+# Builds the project and starts all services in the background. Run from the project root.
+set -e
 
-echo "Starting Travel AI Application..."
-echo "Make sure you have set OPENAI_API_KEY environment variable"
-
-if [ -z "$OPENAI_API_KEY" ]; then
-    echo "ERROR: OPENAI_API_KEY environment variable is not set"
-    echo "Please set it with: export OPENAI_API_KEY=your_api_key_here"
+if [ -z "$OPENAI_API_KEY" ] && ! grep -qs '^OPENAI_API_KEY=' .env; then
+    echo "ERROR: set OPENAI_API_KEY (export it, or put OPENAI_API_KEY=... in a .env file in the project root)"
     exit 1
 fi
 
-# Build the project
-echo "Building the project..."
-mvn clean install
-
-# Start services in background
-echo "Starting MCP Flight Server..."
-cd mcp-flight-server
-nohup mvn spring-boot:run > ../logs/mcp-flight.log 2>&1 &
-MCP_FLIGHT_PID=$!
-cd ..
-
-echo "Starting MCP Hotel Server..."
-cd mcp-hotel-server
-nohup mvn spring-boot:run > ../logs/mcp-hotel.log 2>&1 &
-MCP_HOTEL_PID=$!
-cd ..
-
-# Wait for MCP servers to start
-echo "Waiting for MCP servers to start..."
-sleep 10
-
-echo "Starting Flight Agent..."
-cd flight-agent
-nohup mvn spring-boot:run > ../logs/flight-agent.log 2>&1 &
-FLIGHT_AGENT_PID=$!
-cd ..
-
-echo "Starting Hotel Agent..."
-cd hotel-agent
-nohup mvn spring-boot:run > ../logs/hotel-agent.log 2>&1 &
-HOTEL_AGENT_PID=$!
-cd ..
-
-# Wait for agents to start
-echo "Waiting for agents to start..."
-sleep 10
-
-echo "Starting Travel Orchestrator..."
-cd travel-orchestrator
-nohup mvn spring-boot:run > ../logs/orchestrator.log 2>&1 &
-ORCHESTRATOR_PID=$!
-cd ..
-
-# Save PIDs to file for easy cleanup
+./mvnw -q -B clean package -DskipTests
 mkdir -p logs
-echo $MCP_FLIGHT_PID > logs/pids.txt
-echo $MCP_HOTEL_PID >> logs/pids.txt
-echo $FLIGHT_AGENT_PID >> logs/pids.txt
-echo $HOTEL_AGENT_PID >> logs/pids.txt
-echo $ORCHESTRATOR_PID >> logs/pids.txt
+: > logs/pids.txt
+
+start() {
+    echo "Starting $1 on port $2..."
+    nohup java -jar "$1/target/$1-1.0.0.jar" > "logs/$1.log" 2>&1 &
+    echo $! >> logs/pids.txt
+}
+
+wait_for() {
+    for _ in $(seq 1 60); do
+        curl -s -o /dev/null "$1" && return 0
+        sleep 1
+    done
+    echo "ERROR: $1 did not come up, see logs/"
+    exit 1
+}
+
+# MCP servers first: the agents connect to them at startup
+start mcp-flight-server 8081
+start mcp-hotel-server 8083
+wait_for http://localhost:8081/mcp
+wait_for http://localhost:8083/mcp
+
+start flight-agent 8080
+start hotel-agent 8082
+start travel-orchestrator 9000
+wait_for http://localhost:8080/.well-known/agent-card.json
+wait_for http://localhost:8082/.well-known/agent-card.json
+wait_for http://localhost:9000/
 
 echo ""
-echo "All services started!"
-echo "Services running on:"
-echo "  - MCP Flight Server: http://localhost:8081"
-echo "  - MCP Hotel Server: http://localhost:8083"
-echo "  - Flight Agent: http://localhost:8080"
-echo "  - Hotel Agent: http://localhost:8082"
-echo "  - Travel Orchestrator: http://localhost:9000"
-echo ""
-echo "To stop all services, run: ./stop-dev.sh"
-echo "Logs are available in the logs/ directory"
+echo "All services started. Open http://localhost:9000 for the chat UI."
+echo "Logs: logs/   Stop: ./scripts/stop-dev.sh   Smoke test: ./scripts/test-api.sh"

@@ -4,24 +4,34 @@ server:
 spring:
   application:
     name: hotel-agent
+  threads:
+    virtual:
+      enabled: true
   ai:
     openai:
-      api-key: ${OPENAI_API_KEY:your-api-key-here}
+      # Any OpenAI-compatible endpoint works: a local LM Studio / Ollama, Groq, ... (see .env.example)
+      base-url: ${OPENAI_BASE_URL:https://api.openai.com/v1}
+      api-key: ${OPENAI_API_KEY}
+      # Per LLM call; raise it for slow local models (each timeout is retried up to 3 times)
+      timeout: ${OPENAI_TIMEOUT:120s}
       chat:
-        options:
-          model: gpt-4
-          temperature: 0.7
+        model: ${OPENAI_MODEL:gpt-5-mini}
+    mcp:
+      client:
+        name: hotel-agent
+        type: SYNC
+        request-timeout: 30s
+        streamable-http:
+          connections:
+            hotel-mcp:
+              url: ${HOTEL_MCP_URL:http://localhost:8083}
 
-hotel:
-  mcp:
-    server:
-      url: http://localhost:8083
-
-flight:
+a2a:
   agent:
-    url: http://localhost:8080
-
-logging:
-  level:
-    com.travel.ai: DEBUG
-    org.springframework.ai: DEBUG
+    public-url: ${A2A_PUBLIC_URL:http://localhost:8082}
+  blocking:
+    agent:
+      # How long a blocking message/send waits for the LLM + tool calls to finish. A result that arrives
+      # later is lost (the SDK closes the task's event queue), so keep it above the slowest expected run.
+      timeout:
+        seconds: ${AGENT_TIMEOUT_SECONDS:300}

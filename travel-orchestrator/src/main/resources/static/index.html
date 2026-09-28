@@ -1,0 +1,263 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Travel Assistant</title>
+    <style>
+        :root {
+            --bg: #f6f7f9; --panel: #ffffff; --text: #1d2330; --muted: #6b7385; --border: #e2e5eb;
+            --accent: #2f6fed; --user: #2f6fed; --user-text: #ffffff; --ok: #1f9d55; --down: #d64545;
+        }
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --bg: #14171d; --panel: #1c2028; --text: #e6e9ef; --muted: #98a0b3; --border: #2c323d;
+                --accent: #6b9bff; --user: #3a64c8; --user-text: #ffffff; --ok: #4cc38a; --down: #ff6b6b;
+            }
+        }
+        * { box-sizing: border-box; }
+        body { margin: 0; font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; background: var(--bg); color: var(--text); }
+        .app { max-width: 880px; margin: 0 auto; height: 100dvh; display: flex; flex-direction: column; padding: 16px; gap: 12px; }
+        header { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+        h1 { font-size: 18px; margin: 0; }
+        .status { display: flex; gap: 12px; font-size: 13px; color: var(--muted); }
+        .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--muted); margin-right: 5px; }
+        .dot.up { background: var(--ok); } .dot.down { background: var(--down); }
+        #log { flex: 1; overflow-y: auto; background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 16px; display: flex; flex-direction: column; gap: 12px; }
+        .msg { max-width: 85%; padding: 10px 14px; border-radius: 12px; white-space: pre-wrap; overflow-wrap: anywhere; }
+        .msg.user { align-self: flex-end; background: var(--user); color: var(--user-text); }
+        .msg.assistant { align-self: flex-start; background: var(--bg); border: 1px solid var(--border); }
+        .msg.error { align-self: flex-start; color: var(--down); border: 1px solid var(--down); }
+        .msg.notice { align-self: center; color: var(--muted); font-size: 13px; }
+        .booking { align-self: flex-start; width: min(560px, 100%); background: var(--panel); border: 1px solid var(--accent); border-radius: 12px; padding: 14px; white-space: normal; }
+        .booking h2 { font-size: 15px; margin: 0 0 8px; }
+        .booking .line { padding: 6px 0; border-top: 1px solid var(--border); }
+        .booking .line:first-of-type { border-top: none; }
+        .booking .id { font-size: 12px; color: var(--muted); font-family: ui-monospace, monospace; }
+        .booking .total { font-weight: 600; margin-top: 8px; }
+        .booking .actions { display: flex; gap: 8px; margin-top: 12px; }
+        .booking .result { margin-top: 10px; }
+        .booking .ok { color: var(--ok); } .booking .bad { color: var(--down); }
+        .meta { font-size: 12px; color: var(--muted); }
+        .examples { display: flex; gap: 8px; flex-wrap: wrap; }
+        .examples button { font-size: 13px; }
+        form { display: flex; gap: 8px; }
+        textarea { flex: 1; resize: none; height: 56px; padding: 10px; border-radius: 10px; border: 1px solid var(--border); background: var(--panel); color: var(--text); font: inherit; }
+        button { border: 1px solid var(--border); background: var(--panel); color: var(--text); border-radius: 8px; padding: 6px 12px; cursor: pointer; font: inherit; }
+        button.primary { background: var(--accent); border-color: var(--accent); color: #fff; padding: 0 20px; }
+        button:disabled { opacity: .5; cursor: default; }
+    </style>
+</head>
+<body>
+<div class="app">
+    <header>
+        <h1>Travel Assistant</h1>
+        <div class="status" id="status">checking agents…</div>
+        <button id="reset" type="button">New conversation</button>
+    </header>
+    <div class="examples">
+        <button type="button">Plan a 5-day trip to Armenia from New York in mid October for 2 people, mid-range budget</button>
+        <button type="button">Find hotels in Yerevan from 2026-10-15 to 2026-10-20 for 2 guests</button>
+        <button type="button" id="followUp" disabled title="Follow-up: use it after a trip has been planned">Make the hotel cheaper</button>
+    </div>
+    <div id="log"><div class="meta" id="conversation"></div></div>
+    <form id="form">
+        <textarea id="input" placeholder="Where do you want to go?" required></textarea>
+        <button class="primary" id="send">Send</button>
+    </form>
+</div>
+<script>
+    const log = document.getElementById('log');
+    const input = document.getElementById('input');
+    const send = document.getElementById('send');
+    const followUp = document.getElementById('followUp');
+    const conversationLabel = document.getElementById('conversation');
+    const examples = document.querySelectorAll('.examples button');
+    let conversationId = null;
+    let busy = false;
+
+    function add(role, text) {
+        const div = document.createElement('div');
+        div.className = 'msg ' + role;
+        div.textContent = text;
+        log.appendChild(div);
+        log.scrollTop = log.scrollHeight;
+        return div;
+    }
+
+    // Minimal, safe formatting of the model's markdown: escape everything, then **bold** and headings
+    function render(el, text) {
+        const escaped = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        el.innerHTML = escaped
+            .replace(/^#{1,6}\s*(.+)$/gm, '<strong>$1</strong>')
+            .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+    }
+
+    function setConversation(id) {
+        conversationId = id;
+        conversationLabel.textContent = id ? 'Conversation ' + id : '';
+        setBusy(busy);
+    }
+
+    function setBusy(value) {
+        busy = value;
+        send.disabled = value;
+        examples.forEach(b => b.disabled = value);
+        followUp.disabled = value || !conversationId;
+    }
+
+    async function ask(message) {
+        if (busy) return;
+        setBusy(true);
+        add('user', message);
+        const pending = add('assistant', 'Working…');
+        const started = performance.now();
+        const seconds = () => ((performance.now() - started) / 1000).toFixed(0);
+        const timer = setInterval(() => pending.textContent = `Asking the flight and hotel agents… ${seconds()}s`, 1000);
+        try {
+            let res;
+            try {
+                res = await fetch('api/v1/travel/chat', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({message, conversationId})
+                });
+            } catch (e) {
+                throw new Error('Cannot reach the assistant. Is the orchestrator running on port 9000?');
+            }
+            const body = await res.json().catch(() => ({}));
+            if (body.code === 'CONVERSATION_NOT_FOUND') {
+                setConversation(null);
+                pending.className = 'msg notice';
+                pending.textContent = body.error + ' Your message was not sent.';
+                return;
+            }
+            if (!res.ok) throw new Error(body.error || `HTTP ${res.status}`);
+            setConversation(body.conversationId);
+            render(pending, body.response);
+            pending.insertAdjacentHTML('beforeend', `<div class="meta">${seconds()}s</div>`);
+            if (body.pendingBooking) showProposal(body.pendingBooking);
+            if (body.booking) {
+                const card = cards.get(body.booking.proposalId);
+                if (card) card.done(body.booking);
+            }
+        } catch (e) {
+            pending.className = 'msg error';
+            pending.textContent = 'Error: ' + e.message;
+        } finally {
+            clearInterval(timer);
+            setBusy(false);
+            log.scrollTop = log.scrollHeight;
+            input.focus();
+        }
+    }
+
+    function el(tag, className, text) {
+        const node = document.createElement(tag);
+        if (className) node.className = className;
+        if (text !== undefined) node.textContent = text;
+        return node;
+    }
+
+    const time = value => value ? String(value).slice(11, 16) : '';
+    const cards = new Map(); // proposalId -> card controls, so a typed "yes" can update its card
+
+    function showConfirmation(result, body) {
+        result.className = 'result';
+        result.replaceChildren();
+        result.append(el('div', body.status === 'confirmed' ? 'ok' : 'bad', `Status: ${body.status}`));
+        if (body.flightBooking) result.append(el('div', null, `Flight booking ${body.flightBooking.bookingId} · ${body.flightBooking.totalPrice} ${body.flightBooking.currency}`));
+        if (body.hotelBooking) result.append(el('div', null, `Hotel booking ${body.hotelBooking.bookingId} · ${body.hotelBooking.totalPrice} ${body.hotelBooking.currency}`));
+        for (const error of body.errors) result.append(el('div', 'bad', error));
+    }
+
+    // Shows the exact offers held by the servers; Confirm books exactly these, without the LLM
+    function showProposal(p) {
+        const card = el('div', 'booking');
+        card.append(el('h2', null, 'Review your booking'));
+        for (const f of p.flights) {
+            const line = el('div', 'line', `✈️ ${f.airline} ${f.flightNumber} · ${f.from} → ${f.to} · ${f.date} ${time(f.departureTime)}–${time(f.arrivalTime)} · ${f.passengers} passenger(s) · ${f.totalPrice} ${f.currency}`);
+            line.append(el('div', 'id', f.flightId));
+            card.append(line);
+        }
+        if (p.hotel) {
+            const h = p.hotel;
+            const line = el('div', 'line', `🏨 ${h.name} · ${h.checkIn} → ${h.checkOut} · ${h.nights} night(s), ${h.rooms} room(s) · ${h.totalPrice} ${h.currency}`);
+            line.append(el('div', 'id', h.hotelId));
+            card.append(line);
+        }
+        card.append(el('div', 'line', `👤 ${p.travellerNames.join(', ')}${p.contactEmail ? ' · ' + p.contactEmail : ''}`));
+        card.append(el('div', 'total', `Total: ${p.totalPrice} ${p.currency}`));
+
+        const actions = el('div', 'actions');
+        const confirm = el('button', 'primary', 'Confirm booking');
+        const cancel = el('button', null, 'Cancel');
+        actions.append(confirm, cancel);
+        card.append(actions);
+        const result = el('div', 'result');
+        card.append(result);
+        log.appendChild(card);
+        log.scrollTop = log.scrollHeight;
+
+        async function decide(action) {
+            confirm.disabled = cancel.disabled = true;
+            result.className = 'result';
+            result.textContent = action === 'confirm' ? 'Booking…' : 'Cancelling…';
+            try {
+                const res = await fetch(`api/v1/travel/bookings/${encodeURIComponent(p.proposalId)}/${action}`, {method: 'POST'});
+                const body = res.status === 204 ? {} : await res.json().catch(() => ({}));
+                if (!res.ok) throw new Error(body.error || `HTTP ${res.status}`);
+                if (action === 'cancel') {
+                    result.textContent = 'Cancelled. Nothing was booked.';
+                    return;
+                }
+                showConfirmation(result, body);
+            } catch (e) {
+                result.className = 'result bad';
+                result.textContent = 'Error: ' + e.message;
+            }
+            log.scrollTop = log.scrollHeight;
+        }
+        confirm.addEventListener('click', () => decide('confirm'));
+        cancel.addEventListener('click', () => decide('cancel'));
+        cards.set(p.proposalId, {
+            done(body) {
+                confirm.disabled = cancel.disabled = true;
+                showConfirmation(result, body);
+            }
+        });
+    }
+
+    async function refreshStatus() {
+        const el = document.getElementById('status');
+        try {
+            const agents = await (await fetch('api/v1/travel/agents/status')).json();
+            el.innerHTML = Object.entries(agents).map(([name, a]) =>
+                `<span title="${a.available ? a.url : 'unavailable'}"><span class="dot ${a.available ? 'up' : 'down'}"></span>${name}</span>`
+            ).join('');
+        } catch (e) {
+            el.textContent = 'orchestrator unreachable';
+        }
+    }
+
+    document.getElementById('form').addEventListener('submit', e => {
+        e.preventDefault();
+        const message = input.value.trim();
+        if (message && !busy) { input.value = ''; ask(message); }
+    });
+    input.addEventListener('keydown', e => {
+        if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); document.getElementById('form').requestSubmit(); }
+    });
+    examples.forEach(b => b.addEventListener('click', () => ask(b.textContent)));
+    document.getElementById('reset').addEventListener('click', () => {
+        if (busy) return;
+        log.querySelectorAll('.msg').forEach(m => m.remove());
+        setConversation(null);
+    });
+
+    setBusy(false);
+    refreshStatus();
+    setInterval(refreshStatus, 10000);
+</script>
+</body>
+</html>

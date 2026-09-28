@@ -4,27 +4,15 @@ server:
 spring:
   application:
     name: mcp-flight-server
-  ai:
-    openai:
-      api-key: ${OPENAI_API_KEY:your-api-key-here}
-      chat:
-        options:
-          model: gpt-4
-          temperature: 0.7
-  datasource:
-    url: jdbc:h2:mem:flightdb
-    driverClassName: org.h2.Driver
-    username: sa
-    password:
-  jpa:
-    database-platform: org.hibernate.dialect.H2Dialect
-    hibernate:
-      ddl-auto: create-drop
-    show-sql: true
-  h2:
-    console:
+  threads:
+    virtual:
       enabled: true
-
-logging:
-  level:
-    com.travel.ai: DEBUG
+  ai:
+    mcp:
+      server:
+        name: flight-mcp-server
+        version: 1.0.0
+        instructions: "Flight search and booking tools aggregated from multiple (mock) providers"
+        protocol: STREAMABLE
+        streamable-http:
+          mcp-endpoint: /mcp

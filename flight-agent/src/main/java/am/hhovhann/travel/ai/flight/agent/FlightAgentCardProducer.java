@@ -2,60 +2,57 @@ package am.hhovhann.travel.ai.flight.agent;
 
 import io.a2a.spec.AgentCapabilities;
 import io.a2a.spec.AgentCard;
-import io.a2a.spec.AgentInterface;
 import io.a2a.spec.AgentSkill;
 import io.a2a.spec.TransportProtocol;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.context.annotation.Primary;
 
-import java.util.Collections;
 import java.util.List;
 
-@Configuration
+@Configuration(proxyBeanMethods = false)
 public class FlightAgentCardProducer {
 
-    @Value("${server.port:8080}")
-    private String serverPort;
-
-    @Bean("flightAgentCard")
-    @Primary
-    public AgentCard flightAgentCard() {
+    /**
+     * @param publicUrl the URL other agents use to reach this agent; must be reachable from the caller
+     *                  (e.g. http://flight-agent:8080 inside docker compose)
+     */
+    @Bean
+    public AgentCard flightAgentCard(@Value("${a2a.agent.public-url}") String publicUrl) {
         return new AgentCard.Builder()
                 .name("Flight Agent")
-                .description("AI agent for flight search and booking via MCP servers")
-                .url("http://localhost:" + serverPort + "/flight")
+                .description("Searches, recommends and books flights across multiple airline providers")
+                .url(publicUrl)
                 .preferredTransport(TransportProtocol.JSONRPC.asString())
-                .additionalInterfaces(List.of(
-                        new AgentInterface(TransportProtocol.JSONRPC.asString(), "http://localhost:" + serverPort + "/flight"),
-                        new AgentInterface(TransportProtocol.GRPC.asString(), "http://localhost:" + serverPort + "/flight")
-                ))
+                .protocolVersion("0.3.0")
                 .version("1.0.0")
                 .capabilities(new AgentCapabilities.Builder()
-                        .streaming(true)
+                        .streaming(false)
                         .pushNotifications(false)
-                        .stateTransitionHistory(true)
+                        .stateTransitionHistory(false)
                         .build())
-                .defaultInputModes(Collections.singletonList("text"))
-                .defaultOutputModes(Collections.singletonList("text"))
+                .defaultInputModes(List.of("text/plain", "application/json"))
+                .defaultOutputModes(List.of("text/plain", "application/json"))
                 .skills(List.of(
                         new AgentSkill.Builder()
                                 .id("flight_search")
                                 .name("Flight Search")
-                                .description("Search flights via MCP server integration")
-                                .tags(List.of("flights", "search", "mcp"))
-                                .examples(List.of("Find flights from NYC to London"))
+                                .description("Find and compare flights between two cities for given dates and passengers")
+                                .tags(List.of("flights", "search"))
+                                .examples(List.of("Find flights from New York to Yerevan on 2026-10-15 for 2 passengers"))
                                 .build(),
                         new AgentSkill.Builder()
                                 .id("flight_booking")
-                                .name("Flight Booking")
-                                .description("Book flights via MCP server integration")
-                                .tags(List.of("flights", "booking", "mcp"))
-                                .examples(List.of("Book flight for 2 passengers"))
+                                .name("Flight Booking (structured)")
+                                .description("Executed exactly as sent, without the LLM. Send a DataPart "
+                                        + "{\"tool\": \"get_offer\" | \"book_flight\" | \"get_booking\", \"arguments\": {...}}. "
+                                        + "Only offers returned by a search can be booked.")
+                                .tags(List.of("flights", "booking"))
+                                .inputModes(List.of("application/json"))
+                                .outputModes(List.of("application/json"))
+                                .examples(List.of("{\"tool\":\"book_flight\",\"arguments\":{\"flightIds\":[\"JOY1:JFK-EVN:2026-10-15\"],\"passengerNames\":[\"Anna Petrosyan\"],\"contactEmail\":\"anna@example.com\"}}"))
                                 .build()
                 ))
-                .protocolVersion("0.3.0")
                 .build();
     }
 }
