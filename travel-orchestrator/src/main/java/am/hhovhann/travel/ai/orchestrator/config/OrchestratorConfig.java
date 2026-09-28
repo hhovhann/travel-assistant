@@ -6,6 +6,7 @@ import am.hhovhann.travel.ai.orchestrator.booking.BookingService;
 import am.hhovhann.travel.ai.orchestrator.booking.BookingTools;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.client.advisor.MessageChatMemoryAdvisor;
+import org.springframework.ai.chat.client.advisor.SimpleLoggerAdvisor;
 import org.springframework.ai.chat.memory.ChatMemory;
 import org.springframework.ai.openai.OpenAiChatOptions;
 import org.springframework.beans.factory.annotation.Value;
@@ -74,7 +75,8 @@ public class OrchestratorConfig {
                 .defaultOptions(OpenAiChatOptions.builder().timeout(llmTimeout))
                 .defaultSystem(SYSTEM_PROMPT)
                 .defaultTools(new TravelAgentTools(flightAgent, hotelAgent), new BookingTools(bookingService))
-                .defaultAdvisors(MessageChatMemoryAdvisor.builder(chatMemory).build())
+                // SimpleLoggerAdvisor logs each prompt and response at DEBUG (see docs/ONBOARDING.md)
+                .defaultAdvisors(MessageChatMemoryAdvisor.builder(chatMemory).build(), new SimpleLoggerAdvisor())
                 .build();
     }
 }

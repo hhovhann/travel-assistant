@@ -11,7 +11,7 @@ spring:
     mcp:
       server:
         name: flight-mcp-server
-        version: 1.0.0
+        version: 0.1.0
         instructions: "Flight search and booking tools aggregated from multiple (mock) providers"
         protocol: STREAMABLE
         streamable-http:

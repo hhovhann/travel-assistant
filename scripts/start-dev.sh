@@ -13,7 +13,7 @@ mkdir -p logs
 
 start() {
     echo "Starting $1 on port $2..."
-    nohup java -jar "$1/target/$1-1.0.0.jar" > "logs/$1.log" 2>&1 &
+    nohup java -jar "$1/target/$1-0.1.0.jar" > "logs/$1.log" 2>&1 &
     echo $! >> logs/pids.txt
 }
 

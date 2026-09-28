@@ -6,6 +6,7 @@ import io.a2a.server.agentexecution.AgentExecutor;
 import io.modelcontextprotocol.client.McpSyncClient;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.client.advisor.MessageChatMemoryAdvisor;
+import org.springframework.ai.chat.client.advisor.SimpleLoggerAdvisor;
 import org.springframework.ai.chat.memory.ChatMemory;
 import org.springframework.ai.openai.OpenAiChatOptions;
 import org.springframework.ai.tool.ToolCallback;
@@ -53,7 +54,8 @@ public class HotelAgentConfig {
                 .defaultOptions(OpenAiChatOptions.builder().timeout(llmTimeout))
                 .defaultSystem(SYSTEM_PROMPT)
                 .defaultToolCallbacks(llmTools)
-                .defaultAdvisors(MessageChatMemoryAdvisor.builder(chatMemory).build())
+                // SimpleLoggerAdvisor logs each prompt and response at DEBUG (see docs/ONBOARDING.md)
+                .defaultAdvisors(MessageChatMemoryAdvisor.builder(chatMemory).build(), new SimpleLoggerAdvisor())
                 .build();
     }
 

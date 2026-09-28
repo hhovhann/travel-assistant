@@ -5,6 +5,9 @@ A multi-agent travel planning assistant built with **Spring AI**, the **Agent2Ag
 and a Hotel Agent, which query (mock) airline and hotel providers through MCP tools, and combines the results into an
 itinerary you can book from the chat.
 
+**Status: MVP (v0.1.0).** Works end to end with mock providers; see [Current limitations](#current-limitations).
+New here? [docs/ONBOARDING.md](docs/ONBOARDING.md) walks you through running and debugging it step by step.
+
 ## Architecture
 
 ```
@@ -70,7 +73,7 @@ LLMs search, compare and talk. Nothing that books is left to an LLM:
 | Spring Boot | 4.1.1 |
 | Spring AI (OpenAI, MCP client/server, chat memory) | 2.0.1 |
 | A2A Java SDK | 0.3.3.Final (latest stable; 1.0 is still Alpha) |
-| MCP Java SDK | 2.0.1 (via Spring AI) |
+| MCP Java SDK | 2.0.0 (via Spring AI) |
 
 ## Getting started
 
@@ -121,7 +124,7 @@ Open <http://localhost:9000> for the chat UI, or run the end-to-end smoke test:
 ```
 
 To run a single service from the IDE or the command line, start the MCP servers first (the agents connect to them at
-startup): `java -jar mcp-flight-server/target/mcp-flight-server-1.0.0.jar`, and so on.
+startup): `java -jar mcp-flight-server/target/mcp-flight-server-0.1.0.jar`, and so on.
 
 ### Using a local model (no API key) or another provider
 
@@ -161,7 +164,16 @@ curl -X POST http://localhost:9000/api/v1/travel/bookings/BP-1A2B3C4D/cancel
 curl http://localhost:9000/api/v1/travel/agents/status
 ```
 
-Errors return `400` for invalid input and `502` when the LLM or an agent fails, with `{"error": "..."}`.
+Errors return `{"error": "..."}` with:
+
+| Status | When |
+|---|---|
+| `400` | Invalid input (missing `message`, `from`, `to` or `departureDate`) |
+| `404` `CONVERSATION_NOT_FOUND` | The `conversationId` is unknown, e.g. after a restart |
+| `404` `BOOKING_NOT_FOUND` | The proposal was already confirmed, cancelled or replaced by a newer one |
+| `502` | The LLM or an agent failed |
+
+Confirm returns the `BookingConfirmation` (`status`: `confirmed`, `partially_confirmed` or `failed`); cancel returns `204`.
 
 Talking to an agent directly over A2A:
 
@@ -202,6 +214,7 @@ hotel-agent/           A2A Hotel Agent (LLM + MCP client)
 mcp-flight-server/     MCP server with flight tools and mock providers
 mcp-hotel-server/      MCP server with hotel tools and mock providers
 travel-orchestrator/   REST API, chat UI (static/index.html) and the orchestrating LLM
+docs/                  ONBOARDING.md: run, debug and explore the application step by step
 scripts/               start-dev.sh, stop-dev.sh, test-api.sh
 postman/               Postman environment for manual API testing
 Dockerfile             One multi-stage image for any module (--build-arg MODULE=<module>)
