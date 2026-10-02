@@ -4,11 +4,15 @@
     ./capture.sh && uv run --with pillow python build_video.py
 
 Rules (same as the other demo videos): narrate only what is on screen, say what is local / scripted / not done yet,
-and say that the voice is synthetic. Narration uses macOS `say`.
+and say that the voice is synthetic. Narration is Kokoro (offline neural TTS, voice af_heart), run by tts.py:
+
+    MODELS=/dir/with/kokoro-v1.0.onnx+voices-v1.0.bin uv run --with pillow python build_video.py
 """
 
 from __future__ import annotations
 
+import json
+import os
 import re
 import subprocess
 from pathlib import Path
@@ -20,7 +24,17 @@ OUT = HERE / "out"
 CAP = OUT / "captures"
 WORK = OUT / "work"
 W, H = 1920, 1080
-VOICE, RATE = "Samantha", 165
+VOICE, SPEED = "af_heart", 1.0
+
+# Spelled out for the voice only; captions keep the normal spelling
+SPOKEN = {"A2A": "A two A", "MCP": "M C P", "OIDC": "O I D C", "BigQuery": "Big Query", "Terraform": "Terra form"}
+
+
+def spoken(text: str) -> str:
+    for written, said in SPOKEN.items():
+        text = text.replace(written, said)
+    return text
+
 
 BG, PANEL, FG, DIM = (14, 17, 23), (22, 27, 36), (230, 235, 245), (130, 140, 160)
 GREEN, RED, YELLOW, BLUE, ACCENT = (110, 220, 140), (255, 120, 120), (255, 205, 100), (120, 180, 255), (96, 165, 250)
@@ -45,7 +59,7 @@ SCENES = [
     dict(kind="arch",
          say="The orchestrator is Java with Spring A I. It delegates over A2A to a flight agent and a hotel agent, "
              "which use MCP servers for their tools. In this port, the flight agent is rewritten on Google's Agent "
-             "Development Kit, in Python. The orchestrator, the MCP servers and the hotel agent are the existing Java "
+             "Development Kit, in Python, next to the Java original, which stays in the repository. The orchestrator, the MCP servers and the hotel agent are the existing Java "
              "services, unchanged. That is the point of A2A and MCP: the protocols stay stable while the framework changes."),
     dict(kind="term", file="1_status.txt", title="Java orchestrator  →  agent cards",
          say="Here the Java orchestrator asks for the status of its agents. It reads each agent's card with the Java A2A "
@@ -131,7 +145,7 @@ def architecture():
     d = ImageDraw.Draw(img)
     d.text((120, 80), "Same system, new framework for one agent", font=font(SANS_BOLD, 60), fill=FG)
     box(d, (660, 220, 1260, 360), "Orchestrator", "Java · Spring AI · unchanged", DIM)
-    box(d, (200, 520, 900, 680), "Flight Agent", "Python · Google ADK · NEW", GREEN, "+ policy & fare history (BigQuery; CSV locally)")
+    box(d, (200, 520, 900, 680), "Flight Agent", "Python · Google ADK · NEW (Java original kept)", GREEN, "+ policy & fare history (BigQuery; CSV locally)")
     box(d, (1020, 520, 1720, 660), "Hotel Agent", "Java · Spring AI · unchanged", DIM)
     box(d, (200, 800, 900, 940), "Flight MCP server", "Java · unchanged", DIM)
     box(d, (1020, 800, 1720, 940), "Hotel MCP server", "Java · unchanged", DIM)
@@ -194,11 +208,19 @@ def srt_time(t: float) -> str:
 
 def main():
     WORK.mkdir(parents=True, exist_ok=True)
+    models = os.environ.get("MODELS")
+    if not models:
+        raise SystemExit("Set MODELS to the directory holding kokoro-v1.0.onnx and voices-v1.0.bin")
+    jobs = {"voice": VOICE, "speed": SPEED,
+            "items": [{"file": str(WORK / f"k{n}.wav"), "text": spoken(sc["say"])} for n, sc in enumerate(SCENES)]}
+    (WORK / "jobs.json").write_text(json.dumps(jobs))
+    subprocess.run(["uv", "run", "--python", "3.12", "--with", "kokoro-onnx", "--with", "soundfile", "--with", "numpy",
+                    "python", str(HERE / "tts.py"), str(WORK / "jobs.json")], check=True, env={**os.environ, "MODELS": models})
+
     clips, captions, clock = [], [], 0.0
     for n, scene in enumerate(SCENES):
-        aiff, wav = WORK / f"s{n}.aiff", WORK / f"s{n}.wav"
-        run("say", "-v", VOICE, "-r", RATE, "-o", aiff, scene["say"])
-        run("ffmpeg", "-y", "-i", aiff, "-ar", 44100, "-ac", 1, wav)
+        wav = WORK / f"s{n}.wav"
+        run("ffmpeg", "-y", "-i", WORK / f"k{n}.wav", "-ar", 44100, "-ac", 1, wav)
         talk = duration(wav)
         total = talk + 1.2
 
