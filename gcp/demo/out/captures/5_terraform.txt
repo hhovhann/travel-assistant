@@ -1,0 +1,15 @@
+$ terraform validate
+Success! The configuration is valid.
+
+
+$ grep ^resource main.tf
+"google_project_service" "apis"
+"google_service_account" "flight_agent"
+"google_project_iam_member" "agent_roles"
+"google_bigquery_dataset" "travel"
+"google_bigquery_dataset_iam_member" "agent_reads_travel"
+"google_bigquery_table" "travel_policy"
+"google_bigquery_table" "route_fares"
+"google_cloud_run_v2_service" "flight_agent"
+"google_cloud_run_v2_service_iam_member" "orchestrator_invokes_agent"
+"google_cloud_run_v2_service_iam_member" "agent_invokes_mcp"

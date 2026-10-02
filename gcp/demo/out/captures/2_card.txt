@@ -1,0 +1,20 @@
+$ curl localhost:8090/.well-known/agent-card.json
+{
+  "name": "Flight Agent",
+  "protocolVersion": "0.3.0",
+  "url": "http://localhost:8090",
+  "preferredTransport": "JSONRPC",
+  "securitySchemes": {
+    "internalToken": {
+      "description": "Internal service token sent as `Authorization: Bearer <token>`.",
+      "scheme": "bearer",
+      "type": "http"
+    }
+  },
+  "security": [
+    {
+      "internalToken": []
+    }
+  ]
+}
+skills: ['flight_search', 'policy_check']

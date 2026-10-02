@@ -1,0 +1,11 @@
+origin,destination,cabin,avg_fare_usd,p90_fare_usd,samples
+JFK,EVN,economy,780,1050,214
+JFK,EVN,business,3900,5200,61
+EVN,JFK,economy,820,1100,198
+LHR,EVN,economy,430,640,332
+CDG,EVN,economy,410,610,287
+JFK,LHR,economy,520,780,905
+JFK,LHR,business,3300,4600,412
+SFO,NRT,economy,890,1250,376
+SFO,NRT,business,4100,5600,188
+BER,LIS,economy,140,260,654

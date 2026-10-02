@@ -1,0 +1,10 @@
+.venv/
+__pycache__/
+.pytest_cache/
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+demo/out/work/
+demo/out/*.mp4
+demo/out/*.srt

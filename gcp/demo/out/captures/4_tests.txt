@@ -1,0 +1,8 @@
+$ uv run pytest tests/integration -v
+test_agent_searches_through_authenticated_mcp_and_cannot_book PASSED [ 33%]
+test_injection_never_reaches_the_model_or_mcp PASSED [ 66%]
+test_wrong_service_token_fails_closed PASSED [100%]
+======================== 3 passed, 12 warnings in 0.94s ========================
+
+$ uv run pytest -q   # whole suite
+38 passed, 12 warnings in 1.05s

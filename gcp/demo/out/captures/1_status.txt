@@ -1,0 +1,27 @@
+$ curl localhost:9000/api/v1/travel/agents/status
+{
+  "Flight Agent": {
+    "url": "http://localhost:8090",
+    "available": true,
+    "name": "Flight Agent",
+    "version": "0.3.0",
+    "protocolVersion": "0.3.0",
+    "endpoint": "http://localhost:8090",
+    "skills": [
+      "flight_search",
+      "policy_check"
+    ]
+  },
+  "Hotel Agent": {
+    "url": "http://localhost:8082",
+    "available": true,
+    "name": "Hotel Agent",
+    "version": "0.2.0",
+    "protocolVersion": "0.3.0",
+    "endpoint": "http://localhost:8082",
+    "skills": [
+      "hotel_search",
+      "hotel_booking"
+    ]
+  }
+}

@@ -1,0 +1,9 @@
+traveller_grade,cabin,max_fare_usd,max_stops,approval_over_usd
+standard,economy,1200,1,900
+standard,premium_economy,1800,1,1500
+senior,economy,2000,2,1500
+senior,premium_economy,2800,2,2200
+senior,business,6000,1,4500
+executive,economy,3000,2,2500
+executive,premium_economy,4000,2,3500
+executive,business,9000,2,7000
